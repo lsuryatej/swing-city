@@ -269,7 +269,13 @@ export function createRenderer(canvas, options = {}) {
   // passage does not emit continuously.
   let prevEnergy = 0;
   let krackleCooldown = 0;
-  const figureGlow = createGlowSprite(160, 'rgba(60,110,200,0.28)');
+  // A DARK halo, not a blue glow.
+  //
+  // The blue glow washed the character out — it lit the very pixels it was
+  // meant to separate. Darkening the sky immediately behind him raises local
+  // contrast instead, so the figure reads without any light being added on
+  // top of the art.
+  const figureGlow = createGlowSprite(150, 'rgba(2,3,10,0.62)');
 
   // --- Persistent state -------------------------------------------------
   const cam = { x: 0, y: WORLD_HEIGHT * 0.5, vx: 0, vy: 0 };

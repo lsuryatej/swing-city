@@ -50,7 +50,11 @@ export const SPRITE_PIVOTS = {
   // and torso/thigh run the full image width where they were guessed at 0.86
   // and 0.93. Re-measure with the alpha-scan snippet if the art is redrawn.
   torso: { file: 'torso.png', s: [0.01, 0.498], e: [0.99, 0.489] },
-  head: { file: 'head.png', s: [0.211, 0.536], e: [0.785, 0.498] },
+  // End pivot is the head CENTRE, not the crown. The `head` joint from the
+  // skeleton is the centre of the skull, so mapping the bone onto neck->crown
+  // stretched the sprite well past the joint and left the head visibly
+  // detached and oversized.
+  head: { file: 'head.png', s: [0.211, 0.536], e: [0.50, 0.51] },
   upperArm: { file: 'upper-arm.png', s: [0.01, 0.523], e: [0.99, 0.318] },
   // End pivot is the WRIST, not the image edge — the hand overhangs to the
   // right. Measured thickness at the far edge is 0.05, i.e. fingertips.
@@ -197,5 +201,59 @@ export function drawSpriteFigure(ctx, pose, opts = {}) {
 
   ctx.globalAlpha = 1;
   ctx.restore();
+
+  // The mask goes on AFTER the sprites and OUTSIDE the mirror transform, so
+  // the lenses are never drawn back-to-front. The art deliberately has a blank
+  // head — keeping the face procedural means it stays tunable without
+  // regenerating any assets.
+  drawFace(ctx, j, facing, opts);
   return true;
+}
+
+const FACE = {
+  lens: '#f4f7ff',
+  edge: '#04050b',
+  red: '#ff1e35',
+};
+
+/**
+ * Eye lenses and brow, positioned from the neck->head axis.
+ *
+ * These are the highest-contrast marks on the whole figure by design: at this
+ * render size they are what turns a dark head into a recognisable character.
+ * Everything else on the costume is supporting detail.
+ */
+function drawFace(ctx, j, facing, opts) {
+  const head = j.head;
+  const neck = j.neck;
+  if (!head || !neck) return;
+
+  const dx = head.x - neck.x;
+  const dy = head.y - neck.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const up = { x: dx / len, y: dy / len };          // neck -> head, the skull axis
+  const side = { x: -up.y * facing, y: up.x * facing }; // toward the face
+  const S = (opts.faceScale ?? 1) * (len / 26);      // scale with the head bone
+
+  const lens = (fwd, lift, w, h, alpha) => {
+    const cx = head.x + side.x * fwd * S + up.x * lift * S;
+    const cy = head.y + side.y * fwd * S + up.y * lift * S;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(Math.atan2(side.y, side.x));
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = FACE.edge;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, (w + 1.4) * S, (h + 1.4) * S, -0.3 * facing, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = FACE.lens;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, w * S, h * S, -0.3 * facing, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.restore();
+  };
+
+  lens(0.5, 1.2, 4.2, 3.0, 0.6);  // far eye, smaller and dimmer
+  lens(5.2, 0.7, 5.8, 4.0, 1);    // near eye
 }
