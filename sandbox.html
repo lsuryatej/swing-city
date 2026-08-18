@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Swing City — sim sandbox</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --panel: rgba(8, 10, 20, 0.72);
+        --edge: rgba(140, 180, 255, 0.18);
+        --text: #dbe6ff;
+        --dim: #7f8ea8;
+      }
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        height: 100%;
+        background: #05060c;
+        color: var(--text);
+        font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace;
+        overflow: hidden;
+      }
+      #stage {
+        display: block;
+        width: 100vw;
+        height: 100dvh;
+      }
+      .panel {
+        position: fixed;
+        background: var(--panel);
+        border: 1px solid var(--edge);
+        border-radius: 10px;
+        padding: 12px 14px;
+        backdrop-filter: blur(8px);
+        pointer-events: none;
+      }
+      #hud {
+        top: 16px;
+        left: 16px;
+        min-width: 190px;
+      }
+      #hud.hidden { display: none; }
+      #hud b {
+        display: inline-block;
+        width: 82px;
+        color: var(--dim);
+        font-weight: 500;
+      }
+      #hud .v { color: #6ee7a8; }
+      #hud .dim { color: var(--dim); }
+      #controls {
+        bottom: 16px;
+        left: 16px;
+        pointer-events: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        max-width: min(460px, calc(100vw - 32px));
+      }
+      .row { display: flex; align-items: center; gap: 10px; }
+      input[type='range'] { width: 220px; accent-color: #6ea8ff; }
+      #bpmLabel { min-width: 68px; color: #6ee7a8; }
+      kbd {
+        display: inline-block;
+        padding: 1px 6px;
+        border: 1px solid var(--edge);
+        border-bottom-width: 2px;
+        border-radius: 5px;
+        background: rgba(255, 255, 255, 0.04);
+        color: var(--text);
+        font: inherit;
+        font-size: 11px;
+      }
+      .keys { color: var(--dim); line-height: 1.9; }
+    </style>
+  </head>
+  <body>
+    <canvas id="stage"></canvas>
+
+    <div id="hud" class="panel"></div>
+
+    <div id="controls" class="panel">
+      <div class="row">
+        <label for="bpm" style="color: var(--dim)">tempo</label>
+        <input id="bpm" type="range" min="60" max="200" step="1" value="124" />
+        <span id="bpmLabel">124 bpm</span>
+      </div>
+      <div class="keys">
+        <kbd>space</kbd> impulse &nbsp; <kbd>T</kbd> on-twos &nbsp;
+        <kbd>P</kbd> parallax &nbsp; <kbd>D</kbd> skeleton debug<br />
+        <kbd>C</kbd> choreographed / reactive &nbsp; <kbd>R</kbd> reset &nbsp;
+        <kbd>H</kbd> hide hud &nbsp; <kbd>esc</kbd> pause
+      </div>
+    </div>
+
+    <script type="module" src="/src/dev/sandbox.js"></script>
+  </body>
+</html>

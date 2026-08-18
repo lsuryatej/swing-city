@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Swing City</title>
+    <style>
+      :root {
+        --ink: #e8ecf5;
+        --dim: #8b93a7;
+        --faint: #4a5165;
+        --panel: rgba(12, 15, 26, 0.82);
+        --edge: rgba(255, 255, 255, 0.09);
+        --accent: #6fb4ff;
+        --warn: #e2a44c;
+        --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+        --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+
+      * { box-sizing: border-box; }
+
+      html, body {
+        margin: 0;
+        height: 100%;
+        background: #05070e;
+        color: var(--ink);
+        font-family: var(--sans);
+        overflow: hidden;
+        overscroll-behavior: none;
+      }
+
+      #stage {
+        position: fixed;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+
+      /* --- Entry overlay ---------------------------------------------- */
+
+      #overlay {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-content: center;
+        justify-items: center;
+        gap: 1.75rem;
+        background: rgba(5, 7, 14, 0.72);
+        backdrop-filter: blur(6px);
+        -webkit-backdrop-filter: blur(6px);
+        z-index: 20;
+        transition: opacity 0.6s ease, visibility 0.6s;
+        padding: 2rem;
+        text-align: center;
+      }
+      #overlay.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+
+      #overlay h1 {
+        margin: 0;
+        font-size: clamp(2rem, 7vw, 3.5rem);
+        font-weight: 600;
+        letter-spacing: -0.03em;
+      }
+      #overlay p {
+        margin: 0;
+        max-width: 34ch;
+        color: var(--dim);
+        line-height: 1.6;
+        font-size: 0.95rem;
+      }
+
+      #enter {
+        appearance: none;
+        border: 1px solid var(--edge);
+        background: rgba(255, 255, 255, 0.05);
+        color: var(--ink);
+        font: inherit;
+        font-size: 0.95rem;
+        padding: 0.7rem 2.2rem;
+        border-radius: 999px;
+        cursor: pointer;
+        transition: background 0.2s, transform 0.12s, border-color 0.2s;
+      }
+      #enter:hover:not(:disabled) {
+        background: rgba(255, 255, 255, 0.1);
+        border-color: rgba(255, 255, 255, 0.2);
+      }
+      #enter:active:not(:disabled) { transform: translateY(1px); }
+      #enter:disabled { opacity: 0.4; cursor: default; }
+
+      /* --- Player panel ------------------------------------------------ */
+
+      #panel {
+        position: fixed;
+        left: max(1rem, env(safe-area-inset-left));
+        bottom: max(1rem, env(safe-area-inset-bottom));
+        z-index: 10;
+        width: min(320px, calc(100vw - 2rem));
+        padding: 1rem 1.1rem 1.1rem;
+        border: 1px solid var(--edge);
+        border-radius: 14px;
+        background: var(--panel);
+        backdrop-filter: blur(14px);
+        -webkit-backdrop-filter: blur(14px);
+        transition: opacity 0.4s ease;
+      }
+      #panel.hidden { opacity: 0; pointer-events: none; }
+
+      #title {
+        font-size: 1rem;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      #artist { font-size: 0.8rem; color: var(--dim); margin-top: 0.15rem; }
+      #mode {
+        font-family: var(--mono);
+        font-size: 0.68rem;
+        color: var(--faint);
+        margin-top: 0.5rem;
+        letter-spacing: 0.02em;
+      }
+      #mode.warn { color: var(--warn); }
+
+      #seek {
+        appearance: none;
+        width: 100%;
+        height: 3px;
+        margin: 0.85rem 0 0.6rem;
+        background: rgba(255, 255, 255, 0.12);
+        border-radius: 2px;
+        cursor: pointer;
+      }
+      #seek::-webkit-slider-thumb {
+        appearance: none;
+        width: 11px;
+        height: 11px;
+        border-radius: 50%;
+        background: var(--accent);
+      }
+      #seek::-moz-range-thumb {
+        width: 11px; height: 11px; border: 0;
+        border-radius: 50%; background: var(--accent);
+      }
+
+      .transport { display: flex; gap: 0.4rem; }
+      .transport button {
+        appearance: none;
+        flex: 1;
+        border: 1px solid var(--edge);
+        background: rgba(255, 255, 255, 0.04);
+        color: var(--ink);
+        font-family: var(--mono);
+        font-size: 0.72rem;
+        padding: 0.4rem 0;
+        border-radius: 7px;
+        cursor: pointer;
+        transition: background 0.15s, transform 0.1s;
+      }
+      .transport button:hover { background: rgba(255, 255, 255, 0.09); }
+      .transport button:active { transform: translateY(1px); }
+
+      #tracks {
+        list-style: none;
+        margin: 0.8rem 0 0;
+        padding: 0.65rem 0 0;
+        border-top: 1px solid var(--edge);
+        max-height: 30vh;
+        overflow-y: auto;
+      }
+      #tracks li {
+        font-size: 0.8rem;
+        color: var(--dim);
+        padding: 0.32rem 0.4rem;
+        border-radius: 5px;
+        cursor: pointer;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      #tracks li:hover { background: rgba(255, 255, 255, 0.05); color: var(--ink); }
+      #tracks li.active { color: var(--accent); }
+      #tracks:empty { display: none; }
+
+      /* --- Status / progress ------------------------------------------- */
+
+      #status-wrap {
+        position: fixed;
+        top: max(1rem, env(safe-area-inset-top));
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 15;
+        width: min(300px, calc(100vw - 2rem));
+        text-align: center;
+        pointer-events: none;
+      }
+      #status {
+        font-family: var(--mono);
+        font-size: 0.7rem;
+        color: var(--dim);
+        letter-spacing: 0.04em;
+        min-height: 1em;
+      }
+      #bar-track {
+        height: 2px;
+        margin-top: 0.4rem;
+        background: rgba(255, 255, 255, 0.08);
+        border-radius: 2px;
+        overflow: hidden;
+      }
+      #bar {
+        height: 100%;
+        width: 0;
+        opacity: 0;
+        background: var(--accent);
+        transition: width 0.2s ease, opacity 0.3s;
+      }
+
+      /* --- Drop target -------------------------------------------------- */
+
+      #drop {
+        position: fixed;
+        inset: 0;
+        z-index: 30;
+        display: grid;
+        place-content: center;
+        background: rgba(5, 10, 24, 0.85);
+        border: 2px dashed var(--accent);
+        color: var(--accent);
+        font-family: var(--mono);
+        font-size: 0.9rem;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.15s;
+      }
+      #drop.over { opacity: 1; }
+
+      @media (prefers-reduced-motion: reduce) {
+        * { transition-duration: 0.01ms !important; }
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="stage"></canvas>
+
+    <div id="status-wrap">
+      <div id="status"></div>
+      <div id="bar-track"><div id="bar"></div></div>
+    </div>
+
+    <div id="panel" class="hidden">
+      <div id="title">&mdash;</div>
+      <div id="artist"></div>
+      <div id="mode"></div>
+      <input id="seek" type="range" min="0" max="1000" value="0" aria-label="Seek" />
+      <div class="transport">
+        <button id="prev" type="button">prev</button>
+        <button id="play-pause" type="button">play</button>
+        <button id="next" type="button">next</button>
+      </div>
+      <ul id="tracks"></ul>
+    </div>
+
+    <div id="overlay">
+      <h1>Swing City</h1>
+      <p>
+        Pick a track or drop your own. The swing is choreographed to the beat,
+        not just reacting to it.
+      </p>
+      <button id="enter" type="button">Enter</button>
+    </div>
+
+    <div id="drop">drop an audio file</div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

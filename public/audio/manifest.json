@@ -1,0 +1,28 @@
+{
+  "tracks": [
+    {
+      "id": "whats-up-danger",
+      "title": "What's Up Danger",
+      "artist": "Blackway & Black Caviar",
+      "url": "/audio/whats-up-danger.mp3"
+    },
+    {
+      "id": "calling",
+      "title": "Calling",
+      "artist": "Metro Boomin, Swae Lee, NAV",
+      "url": "/audio/calling.mp3"
+    },
+    {
+      "id": "loser",
+      "title": "Loser",
+      "artist": "Unknown",
+      "url": "/audio/loser.mp3"
+    },
+    {
+      "id": "oh-yeah",
+      "title": "Oh Yeah",
+      "artist": "Unknown",
+      "url": "/audio/oh-yeah.mp3"
+    }
+  ]
+}

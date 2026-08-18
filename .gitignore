@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.DS_Store
+*.log
+
+# Generated test fixtures — reproducible via `npm run gen:audio`
+tests/audio/
+
+# Precomputed beat maps — reproducible via `npm run build:beatmaps`
+public/audio/beatmaps/
+
+# Curated audio is committed deliberately (see public/audio/README.md), but
+# ignore anything dropped in for local experimentation.
+public/audio/scratch/
