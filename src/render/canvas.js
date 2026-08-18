@@ -18,6 +18,7 @@ import { BONES, JOINT_NAMES } from '../sim/skeleton.js';
 import { createCity, createSky, CITY_DEFAULTS } from './city.js';
 import { createHalftone, createKrackle, withChromatic, createSpeedLines } from './comic.js';
 import { drawDetailedFigure } from './figure.js';
+import { drawSpriteFigure, spritesReady } from './sprite-figure.js';
 
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 import { WORLD_HEIGHT } from '../contract.js';
@@ -39,6 +40,10 @@ export const RENDER_DEFAULTS = {
   /** Draw the costumed figure instead of the flat silhouette. Both consume
    *  only pose.joints, so this is a pure renderer swap. */
   detailed: true,
+  /** Use the hand-drawn sprite assets when they have loaded. Falls back to the
+   *  procedural figure automatically, so a missing asset degrades rather than
+   *  rendering nothing. */
+  sprites: true,
   /**
    * Chromatic fringe in world units at full speed.
    *
@@ -506,6 +511,12 @@ export function createRenderer(canvas, options = {}) {
    * exactly what a printing plate is.
    */
   function paintFigure(o) {
+    // Sprite assets win when available. A colour-plate pass still goes to the
+    // procedural figure: flattening a photograph-like sprite to a single
+    // colour is what the chromatic fringe needs, and drawImage cannot recolour.
+    if (o.sprites && !o.plateColor && spritesReady()) {
+      if (drawSpriteFigure(ctx, snapshot, o)) return;
+    }
     if (o.detailed) {
       // NB: test `plateColor`, never `bodyColor`. RENDER_DEFAULTS always sets
       // bodyColor, so using it as the "is this a colour plate?" signal
