@@ -176,7 +176,14 @@ function drawBone(ctx, img, cfg, ja, jb, scaleBias) {
 export function drawSpriteFigure(ctx, pose, opts = {}) {
   if (!loaded) return false;
   const j = pose.joints;
-  const bias = opts.spriteScale ?? 1;
+  // Slight oversize so pieces OVERLAP at the joints instead of butting.
+  //
+  // A cutout rig with pieces meeting exactly edge-to-edge shows a seam at
+  // every joint the moment it rotates, which is most of why the figure reads
+  // as loose parts rather than a body. Overlapping the rounded caps hides the
+  // seam: a circle rotated about its own centre is invariant, so the overlap
+  // region stays constant at any angle.
+  const bias = opts.spriteScale ?? 1.12;
 
   // Mirror the whole figure when travelling left, so the drawn art always
   // faces the direction of travel. Assets are drawn facing right.
@@ -235,25 +242,36 @@ function drawFace(ctx, j, facing, opts) {
   const side = { x: -up.y * facing, y: up.x * facing }; // toward the face
   const S = (opts.faceScale ?? 1) * (len / 26);      // scale with the head bone
 
-  const lens = (fwd, lift, w, h, alpha) => {
-    const cx = head.x + side.x * fwd * S + up.x * lift * S;
-    const cy = head.y + side.y * fwd * S + up.y * lift * S;
+  // Two lenses SIDE BY SIDE across the face, each taller than wide.
+  //
+  // The first version offset them along the FACING axis, which put one behind
+  // the other so they merged into a single horizontal blob. They separate
+  // across the face — perpendicular to the neck->head axis — and each ellipse
+  // is elongated along that same perpendicular, giving the upright teardrop
+  // shape the mask actually has.
+  const across = { x: -up.y, y: up.x };
+
+  const lens = (offset, w, h, alpha) => {
+    const cx = head.x + side.x * 3.4 * S + across.x * offset * S;
+    const cy = head.y + side.y * 3.4 * S + across.y * offset * S;
     ctx.save();
     ctx.translate(cx, cy);
-    ctx.rotate(Math.atan2(side.y, side.x));
+    // Align the ellipse to the head, then tilt outward from the centre line.
+    ctx.rotate(Math.atan2(across.y, across.x) + 0.34 * Math.sign(offset || 1));
     ctx.globalAlpha = alpha;
     ctx.fillStyle = FACE.edge;
     ctx.beginPath();
-    ctx.ellipse(0, 0, (w + 1.4) * S, (h + 1.4) * S, -0.3 * facing, 0, Math.PI * 2);
+    ctx.ellipse(0, 0, (w + 1.3) * S, (h + 1.3) * S, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = FACE.lens;
     ctx.beginPath();
-    ctx.ellipse(0, 0, w * S, h * S, -0.3 * facing, 0, Math.PI * 2);
+    ctx.ellipse(0, 0, w * S, h * S, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.globalAlpha = 1;
     ctx.restore();
   };
 
-  lens(0.5, 1.2, 4.2, 3.0, 0.6);  // far eye, smaller and dimmer
-  lens(5.2, 0.7, 5.8, 4.0, 1);    // near eye
+  // w < h: taller than wide. Far lens slightly smaller and dimmer.
+  lens(-3.6, 2.4, 4.4, 0.72);
+  lens(3.6, 2.7, 5.0, 1);
 }
