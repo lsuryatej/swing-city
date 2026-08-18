@@ -164,6 +164,8 @@ export function createCity(opts = {}) {
     return {
       canvas,
       parallax: preset.parallax,
+      /** Exposed so the renderer can flood below the tile — see drawCity. */
+      bodyColor,
       width: tileWidth,
       height: totalH,
       groundY,

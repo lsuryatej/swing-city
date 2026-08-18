@@ -373,6 +373,20 @@ export function createRenderer(canvas, options = {}) {
       for (let t = first; t <= last; t++) {
         ctx.drawImage(layer.canvas, originX + t * tileW, originY, tileW, drawH);
       }
+
+      // Flood everything BELOW the tile with the layer's own body colour.
+      //
+      // Each layer is a single fixed-height strip, so once the camera drops
+      // past its bottom edge you see straight through to nothing — buildings
+      // appear to vanish and bare sky shows underneath. Overscan only pushes
+      // that boundary further down; it never removes it, because the camera
+      // has no lower bound. Flooding does: the ground is now unbounded, and it
+      // costs one fillRect per layer.
+      const tileBottom = originY + drawH;
+      if (tileBottom < vh) {
+        ctx.fillStyle = layer.bodyColor;
+        ctx.fillRect(0, tileBottom - 1, vw, vh - tileBottom + 1);
+      }
     }
   }
 
