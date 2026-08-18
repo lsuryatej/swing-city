@@ -109,48 +109,43 @@ export function drawDetailedFigure(ctx, pose, opts = {}) {
   /* ---- 2. Base suit --------------------------------------------------- */
   paintBase(ctx, j, C.suit, s, r, 0, hood, C);
 
-  /* ---- 3. Red panels -------------------------------------------------- *
-   * Miles' suit is predominantly black with red at the chest, shoulders and
-   * mask. Keeping red OFF the limbs is deliberate: at this size, colour on a
-   * fast-moving arm turns into a smear, while colour on the torso reads as a
-   * stable emblem.                                                          */
+  /* ---- 3. Red edge stripes -------------------------------------------- *
+   * The signature of this suit is NOT a red chest. It is a black suit with a
+   * red line running down the OUTER edge of each limb, plus a red emblem.
+   * Those stripes are what shape the silhouette and what make the limbs read
+   * as costumed rather than as bare shapes.
+   *
+   * Each stripe is a narrower capsule pushed perpendicular until it sits flush
+   * against one edge of the limb beneath it, so it reads as piping on the seam
+   * rather than as a band painted across the middle.                        */
   const torsoDir = dir(j.hipC, j.neck);
-  const chestX = j.hipC.x + torsoDir.x * torsoDir.len * 0.62;
-  const chestY = j.hipC.y + torsoDir.y * torsoDir.len * 0.62;
-
-  // Upper-chest wedge, tapering down from the neck.
-  fillCapsule(ctx, { x: chestX, y: chestY }, j.neck, r('torso', 1) * 1.02, r('torso', 1) * 0.94, C.red);
-
-  // Shoulder caps.
-  fillCapsule(ctx, j.neck, j.shoulderL, r('clav', 0) * 0.95, r('clav', 1) * 1.05, C.red);
-  fillCapsule(ctx, j.neck, j.shoulderR, r('clav', 0) * 0.95, r('clav', 1) * 1.05, C.red);
-
-  // Interior ink: a hairline between the red chest and the black abdomen.
-  ctx.strokeStyle = C.ink;
-  ctx.lineWidth = 1.4 * s;
-  ctx.beginPath();
   const perp = { x: -torsoDir.y, y: torsoDir.x };
-  const w = r('torso', 0) * 0.96;
-  ctx.moveTo(chestX - perp.x * w, chestY - perp.y * w);
-  ctx.lineTo(chestX + perp.x * w, chestY + perp.y * w);
-  ctx.stroke();
+
+  stripe(ctx, j.shoulderL, j.elbowL, r('upperArm', 0), r('upperArm', 1), C.red, facing);
+  stripe(ctx, j.elbowL, j.handL, r('foreArm', 0), r('foreArm', 1), C.red, facing);
+  stripe(ctx, j.shoulderR, j.elbowR, r('upperArm', 0), r('upperArm', 1), C.red, facing);
+  stripe(ctx, j.elbowR, j.handR, r('foreArm', 0), r('foreArm', 1), C.red, facing);
+  stripe(ctx, j.hipC, j.kneeL, r('thigh', 0), r('thigh', 1), C.red, facing);
+  stripe(ctx, j.kneeL, j.footL, r('shin', 0), r('shin', 1), C.red, facing);
+  stripe(ctx, j.hipC, j.kneeR, r('thigh', 0), r('thigh', 1), C.red, facing);
+  stripe(ctx, j.kneeR, j.footR, r('shin', 0), r('shin', 1), C.red, facing);
+
+  // Shoulder caps: a red curve over the deltoid, which is where the arm
+  // stripe originates in the reference art.
+  fillCapsule(ctx, j.neck, j.shoulderL, r('clav', 0) * 0.5, r('clav', 1) * 1.08, C.red);
+  fillCapsule(ctx, j.neck, j.shoulderR, r('clav', 0) * 0.5, r('clav', 1) * 1.08, C.red);
 
   /* ---- 4. Spider emblem ----------------------------------------------- *
-   * An elongated diamond, not an anatomically correct spider. At 150px tall
-   * the legs of a real emblem collapse into mush; the silhouette of the body
-   * is what actually reads.                                                */
-  const emX = j.hipC.x + torsoDir.x * torsoDir.len * 0.78;
-  const emY = j.hipC.y + torsoDir.y * torsoDir.len * 0.78;
-  const eh = 7 * s;
-  const ew = 3.6 * s;
-  ctx.fillStyle = C.ink;
-  ctx.beginPath();
-  ctx.moveTo(emX + torsoDir.x * eh, emY + torsoDir.y * eh);
-  ctx.lineTo(emX + perp.x * ew, emY + perp.y * ew);
-  ctx.lineTo(emX - torsoDir.x * eh, emY - torsoDir.y * eh);
-  ctx.lineTo(emX - perp.x * ew, emY - perp.y * ew);
-  ctx.closePath();
-  ctx.fill();
+   * RED, on a black chest — the single strongest identifier on the costume,
+   * and the thing I originally had backwards as a black mark on a red chest.
+   *
+   * Drawn as a body plus three swept legs per side rather than an anatomical
+   * spider. Individual legs are below the resolution that survives at this
+   * size, but their combined MASS reads as a spider where a plain diamond
+   * reads as a diamond.                                                     */
+  const emX = j.hipC.x + torsoDir.x * torsoDir.len * 0.72;
+  const emY = j.hipC.y + torsoDir.y * torsoDir.len * 0.72;
+  drawSpider(ctx, emX, emY, torsoDir, perp, 8.4 * s, C.red, s);
 
   /* ---- 5. Shoes -------------------------------------------------------- *
    * Untied high-tops. Miles' most recognisable non-suit element, and cheap:
@@ -160,6 +155,79 @@ export function drawDetailedFigure(ctx, pose, opts = {}) {
 
   /* ---- 6. Mask --------------------------------------------------------- */
   drawMask(ctx, j, s, C, facing);
+}
+
+/**
+ * A red edge stripe along one side of a limb.
+ *
+ * A narrower capsule offset perpendicular by exactly (limbRadius - stripeWidth)
+ * so its far edge lands flush with the limb's edge. Offsetting less would put a
+ * band across the middle of the limb, which reads as a stripe painted on rather
+ * than as piping along a seam.
+ */
+function stripe(ctx, a, b, r0, r1, color, facing) {
+  if (!a || !b) return;
+  const d = dir(a, b);
+  // Perpendicular, flipped to whichever side faces the camera.
+  const nx = -d.y * facing;
+  const ny = d.x * facing;
+  const w0 = r0 * 0.34;
+  const w1 = r1 * 0.34;
+  const o0 = r0 - w0;
+  const o1 = r1 - w1;
+  fillCapsule(
+    ctx,
+    { x: a.x + nx * o0, y: a.y + ny * o0 },
+    { x: b.x + nx * o1, y: b.y + ny * o1 },
+    w0,
+    w1,
+    color
+  );
+}
+
+/**
+ * The chest spider: a body with three swept legs each side.
+ *
+ * `u` is the torso up-axis and `p` its perpendicular, so the emblem rotates
+ * with the chest instead of staying screen-aligned.
+ */
+function drawSpider(ctx, cx, cy, u, p, size, color, s) {
+  const at = (fwd, side) => ({
+    x: cx + u.x * fwd + p.x * side,
+    y: cy + u.y * fwd + p.y * side,
+  });
+
+  ctx.fillStyle = color;
+
+  // Abdomen and thorax, the mass that actually reads at distance.
+  const body = [
+    [at(size * 0.05, 0), size * 0.3],
+    [at(-size * 0.34, 0), size * 0.22],
+    [at(size * 0.4, 0), size * 0.16],
+  ];
+  for (const [pt, rr] of body) {
+    ctx.beginPath();
+    ctx.arc(pt.x, pt.y, rr, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Legs, swept back and down like the emblem in the films.
+  ctx.strokeStyle = color;
+  ctx.lineCap = 'round';
+  ctx.lineWidth = Math.max(1.1 * s, size * 0.11);
+  for (const side of [-1, 1]) {
+    for (let i = 0; i < 3; i++) {
+      const spread = 0.55 + i * 0.42;
+      const reach = size * (0.95 - i * 0.1);
+      const from = at(size * 0.1, side * size * 0.2);
+      const mid = at(size * (0.34 - i * 0.28), side * reach * 0.62);
+      const end = at(size * (0.05 - spread * 0.42), side * reach);
+      ctx.beginPath();
+      ctx.moveTo(from.x, from.y);
+      ctx.quadraticCurveTo(mid.x, mid.y, end.x, end.y);
+      ctx.stroke();
+    }
+  }
 }
 
 /** Body shapes shared by the rim pass and the fill pass. `grow` fattens every
@@ -243,9 +311,26 @@ function drawMask(ctx, j, s, C, facing) {
     ctx.restore();
   };
 
-  // Far eye first, smaller and dimmer — cheap depth without any real 3D.
-  lens(1.2, 0.4, 3.0, 2.1, 0.55);
-  lens(4.6, 0.2, 4.3, 2.9, 1);
+  // Big. In the reference art the lenses dominate the head — they are most of
+  // the face — and undersizing them is what makes a masked head read as a
+  // plain dark ball. Far eye first, smaller and dimmer, for cheap depth.
+  lens(0.4, 0.9, 4.0, 2.9, 0.6);
+  lens(4.9, 0.5, 5.6, 3.9, 1);
+
+  // A red brow line across the top of the mask, standing in for the webbing.
+  ctx.strokeStyle = C.red;
+  ctx.lineWidth = 1.3;
+  ctx.globalAlpha = 0.9;
+  ctx.beginPath();
+  ctx.moveTo(hx - side.x * 5 + up.x * 6.5, hy - side.y * 5 + up.y * 6.5);
+  ctx.quadraticCurveTo(
+    hx + up.x * 9.5,
+    hy + up.y * 9.5,
+    hx + side.x * 6 + up.x * 5.5,
+    hy + side.y * 6 + up.y * 5.5
+  );
+  ctx.stroke();
+  ctx.globalAlpha = 1;
 }
 
 /** Fattened foot with a pale sole. */
@@ -258,15 +343,15 @@ function drawShoe(ctx, knee, foot, s, C, facing) {
     x: foot.x + (-d.y * facing) * 5.2 * s + d.x * 1.6 * s,
     y: foot.y + (d.x * facing) * 5.2 * s + d.y * 1.6 * s,
   };
-  fillCapsule(ctx, foot, toe, 5.2 * s, 4.2 * s, C.suit);
+  fillCapsule(ctx, foot, toe, 5.2 * s, 4.2 * s, C.red);
   ctx.globalAlpha = 0.9;
   fillCapsule(
     ctx,
     { x: foot.x + d.x * 2.4 * s, y: foot.y + d.y * 2.4 * s },
     { x: toe.x + d.x * 1.6 * s, y: toe.y + d.y * 1.6 * s },
-    2.6 * s,
-    2.2 * s,
-    C.sole
+    2.4 * s,
+    2.0 * s,
+    C.suit
   );
   ctx.globalAlpha = 1;
 }
