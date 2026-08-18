@@ -466,7 +466,7 @@ export function createRenderer(canvas, options = {}) {
         (color, dx, dy) => {
           ctx.save();
           ctx.translate(dx, dy);
-          paintFigure(color ? { ...opts, bodyColor: color, rimColor: color } : opts);
+          paintFigure(color ? { ...opts, plateColor: color } : opts);
           ctx.restore();
         },
         opts.reducedMotion ? 0 : amount
@@ -507,20 +507,26 @@ export function createRenderer(canvas, options = {}) {
    */
   function paintFigure(o) {
     if (o.detailed) {
-      const flat = o.bodyColor
+      // NB: test `plateColor`, never `bodyColor`. RENDER_DEFAULTS always sets
+      // bodyColor, so using it as the "is this a colour plate?" signal
+      // flattened the costume on EVERY pass — including the real one — and the
+      // detailed figure rendered as a plain silhouette.
+      const flat = o.plateColor
         ? {
             ...o,
             figureColors: {
-              suit: o.bodyColor, ink: o.bodyColor, red: o.bodyColor,
-              redDeep: o.bodyColor, lens: o.bodyColor, lensEdge: o.bodyColor,
-              sole: o.bodyColor, hood: o.bodyColor,
+              suit: o.plateColor, ink: o.plateColor, red: o.plateColor,
+              redDeep: o.plateColor, lens: o.plateColor, lensEdge: o.plateColor,
+              sole: o.plateColor, hood: o.plateColor,
             },
-            rimColor: o.bodyColor,
+            rimColor: o.plateColor,
           }
         : o;
       drawDetailedFigure(ctx, snapshot, flat);
     } else {
-      drawSilhouette(ctx, snapshot, o);
+      drawSilhouette(ctx, snapshot, o.plateColor
+        ? { ...o, bodyColor: o.plateColor, rimColor: o.plateColor }
+        : o);
     }
   }
 
