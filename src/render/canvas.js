@@ -16,6 +16,9 @@
 
 import { BONES, JOINT_NAMES } from '../sim/skeleton.js';
 import { createCity, createSky, CITY_DEFAULTS } from './city.js';
+import { createHalftone, createKrackle, withChromatic, createSpeedLines } from './comic.js';
+
+const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 import { WORLD_HEIGHT } from '../contract.js';
 
 /** Cap on devicePixelRatio. */
@@ -29,6 +32,13 @@ export const TWOS_HZ = 12;
 
 export const RENDER_DEFAULTS = {
   onTwos: true,
+  /** Spider-Verse comic pass: offset colour plates, halftone screen, krackle,
+   *  speed lines. See src/render/comic.js. */
+  comic: true,
+  /** Chromatic fringe in world units at full speed. */
+  chromaAmount: 5.5,
+  /** Halftone opacity. Very low on purpose — a screen you notice is too heavy. */
+  halftoneAlpha: 0.05,
   parallax: true,
   debug: false,
   reducedMotion: false,
@@ -228,6 +238,16 @@ export function createRenderer(canvas, options = {}) {
   const city = createCity(options.city || CITY_DEFAULTS);
   const sky = createSky(city.config);
   const anchorGlow = createGlowSprite(90, 'rgba(140,200,255,0.5)');
+
+  // --- Comic pass ------------------------------------------------------
+  const halftoneTile = createHalftone({ cell: 5, radius: 1.2 });
+  let halftonePattern = null;
+  const krackle = createKrackle({ max: 90 });
+  const speedLines = createSpeedLines({ count: 22 });
+  // Krackle fires on a RISING energy edge, not on level, so a sustained loud
+  // passage does not emit continuously.
+  let prevEnergy = 0;
+  let krackleCooldown = 0;
   const figureGlow = createGlowSprite(160, 'rgba(60,110,200,0.28)');
 
   // --- Persistent state -------------------------------------------------
@@ -379,6 +399,14 @@ export function createRenderer(canvas, options = {}) {
 
     drawCity();
 
+    // Speed lines sit in SCREEN space between the city and the figure, so they
+    // read as motion of the frame rather than as objects in the world.
+    const speed = Math.hypot(hipVel.x, hipVel.y);
+    const speedIntensity = clamp((speed - 500) / 1400, 0, 1);
+    if (opts.comic && !opts.reducedMotion) {
+      speedLines.draw(ctx, vw, vh, speedIntensity);
+    }
+
     // World space: origin at the camera, scaled, centred on the viewport.
     ctx.setTransform(
       scale * dpr,
@@ -399,7 +427,45 @@ export function createRenderer(canvas, options = {}) {
     );
 
     drawWeb(snapshot);
-    drawSilhouette(ctx, snapshot, opts);
+
+    // Krackle lives in world space so the burst stays attached to where the
+    // hit happened rather than sliding with the camera.
+    const energy = clamp(state.energy ?? 0, 0, 1);
+    krackleCooldown -= dt;
+    if (opts.comic && !opts.reducedMotion) {
+      // Rising edge, not level: a loud sustained passage should not emit
+      // continuously, only the moments energy JUMPS.
+      if (energy - prevEnergy > 0.16 && krackleCooldown <= 0) {
+        const h = snapshot.joints.hipC;
+        krackle.burst(h.x, h.y, energy, Math.sign(hipVel.x) || 1);
+        krackleCooldown = 0.09;
+      }
+      krackle.update(dt);
+      krackle.draw(ctx);
+    }
+    prevEnergy = prevEnergy + (energy - prevEnergy) * Math.min(1, dt * 12);
+
+    if (opts.comic) {
+      // Fringe scales with speed: misregistration reads as velocity, and a
+      // static figure with coloured edges just looks like a printing fault.
+      const amount = opts.chromaAmount * (0.25 + speedIntensity * 0.75);
+      withChromatic(
+        ctx,
+        (color, dx, dy) => {
+          ctx.save();
+          ctx.translate(dx, dy);
+          drawSilhouette(
+            ctx,
+            snapshot,
+            color ? { ...opts, bodyColor: color, rimColor: color } : opts
+          );
+          ctx.restore();
+        },
+        opts.reducedMotion ? 0 : amount
+      );
+    } else {
+      drawSilhouette(ctx, snapshot, opts);
+    }
 
     if (opts.debug) {
       ctx.lineWidth = 2 / scale;
@@ -407,6 +473,20 @@ export function createRenderer(canvas, options = {}) {
     }
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    // Halftone goes LAST and in screen space: it is ink on the page, not a
+    // texture in the scene, so it must not scroll or scale with the camera.
+    if (opts.comic && opts.halftoneAlpha > 0) {
+      if (!halftonePattern) halftonePattern = ctx.createPattern(halftoneTile, 'repeat');
+      if (halftonePattern) {
+        ctx.save();
+        ctx.globalCompositeOperation = 'overlay';
+        ctx.globalAlpha = opts.halftoneAlpha;
+        ctx.fillStyle = halftonePattern;
+        ctx.fillRect(0, 0, vw, vh);
+        ctx.restore();
+      }
+    }
   }
 
   function copyPose(src, dst) {
