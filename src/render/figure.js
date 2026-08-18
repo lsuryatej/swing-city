@@ -153,8 +153,63 @@ export function drawDetailedFigure(ctx, pose, opts = {}) {
   drawShoe(ctx, j.kneeL, j.footL, s, C, facing);
   drawShoe(ctx, j.kneeR, j.footR, s, C, facing);
 
-  /* ---- 6. Mask --------------------------------------------------------- */
+  /* ---- 6. Hands -------------------------------------------------------- *
+   * The single biggest readability win available in code.
+   *
+   * Splayed fingers are one of the most recognisable things about this
+   * character, and without them the arms simply end in rounded stubs — which
+   * is most of why the figure read as assembled tubes rather than as a person.
+   * Three fingers plus a thumb is enough; at this size a fourth is a pixel.   */
+  drawHand(ctx, j.elbowL, j.handL, s, C, 0.92);
+  drawHand(ctx, j.elbowR, j.handR, s, C, 1);
+
+  /* ---- 7. Mask --------------------------------------------------------- */
   drawMask(ctx, j, s, C, facing);
+}
+
+/**
+ * A hand: palm plus three splayed fingers and an opposed thumb.
+ *
+ * The fan is built around the forearm direction so it continues the arm rather
+ * than sitting on the end of it, and the spread is deliberately wide — a
+ * relaxed hand disappears at this scale, a splayed one reads instantly.
+ */
+function drawHand(ctx, elbow, hand, s, C, depth) {
+  if (!elbow || !hand) return;
+  const d = dir(elbow, hand);
+  const n = { x: -d.y, y: d.x };
+
+  ctx.save();
+  ctx.globalAlpha = depth;
+
+  // Palm.
+  const palm = { x: hand.x + d.x * 1.6 * s, y: hand.y + d.y * 1.6 * s };
+  fillCapsule(ctx, hand, palm, 3.6 * s, 4.1 * s, C.suit);
+
+  // Fingers, fanned about the forearm axis.
+  ctx.strokeStyle = C.suit;
+  ctx.lineCap = 'round';
+  ctx.lineWidth = 2.1 * s;
+  for (const spread of [-0.62, -0.16, 0.3]) {
+    const len = (7.4 - Math.abs(spread) * 1.8) * s;
+    const fx = d.x * Math.cos(spread) + n.x * Math.sin(spread);
+    const fy = d.y * Math.cos(spread) + n.y * Math.sin(spread);
+    ctx.beginPath();
+    ctx.moveTo(palm.x, palm.y);
+    ctx.lineTo(palm.x + fx * len, palm.y + fy * len);
+    ctx.stroke();
+  }
+
+  // Thumb, opposed and shorter.
+  ctx.lineWidth = 2.4 * s;
+  const tx = d.x * Math.cos(1.15) - n.x * Math.sin(1.15);
+  const ty = d.y * Math.cos(1.15) - n.y * Math.sin(1.15);
+  ctx.beginPath();
+  ctx.moveTo(palm.x - d.x * 1.2 * s, palm.y - d.y * 1.2 * s);
+  ctx.lineTo(palm.x + tx * 4.6 * s, palm.y + ty * 4.6 * s);
+  ctx.stroke();
+
+  ctx.restore();
 }
 
 /**
@@ -171,8 +226,11 @@ function stripe(ctx, a, b, r0, r1, color, facing) {
   // Perpendicular, flipped to whichever side faces the camera.
   const nx = -d.y * facing;
   const ny = d.x * facing;
-  const w0 = r0 * 0.34;
-  const w1 = r1 * 0.34;
+  // Thin. At 0.34 the stripe was nearly as wide as the limb, so the figure
+  // read as a RED limb with a black core — the inverse of the reference,
+  // which is a black suit with a red seam.
+  const w0 = r0 * 0.2;
+  const w1 = r1 * 0.2;
   const o0 = r0 - w0;
   const o1 = r1 - w1;
   fillCapsule(
@@ -267,9 +325,19 @@ function paintBase(ctx, j, color, s, r, grow, hood, C) {
     ctx.fill();
   }
 
+  // Head: an ellipse aligned to the neck->head axis, not a circle.
+  //
+  // A circle reads as a ball on a stick from every angle. An ellipse slightly
+  // taller than it is wide, rotated with the head, gives the mask a jaw and a
+  // crown — which is most of what makes a covered head read as a head.
+  const hd = dir(j.neck, j.head);
+  ctx.save();
+  ctx.translate(j.head.x, j.head.y);
+  ctx.rotate(Math.atan2(hd.y, hd.x));
   ctx.beginPath();
-  ctx.arc(j.head.x, j.head.y, r('head', 0) + g, 0, Math.PI * 2);
+  ctx.ellipse(0, 0, (r('head', 0) + g) * 1.06, (r('head', 0) + g) * 0.9, 0, 0, Math.PI * 2);
   ctx.fill();
+  ctx.restore();
 }
 
 /**
