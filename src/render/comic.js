@@ -152,7 +152,7 @@ export function createKrackle({ max = 90 } = {}) {
  * @param {(color:string, dx:number, dy:number)=>void} paint
  * @param {number} amount Fringe offset in world units.
  */
-export function withChromatic(ctx, paint, amount, { red = '#ff2b45', cyan = '#12d9ff', alpha = 0.55 } = {}) {
+export function withChromatic(ctx, paint, amount, { red = '#ff2b45', cyan = '#12d9ff', alpha = 0.38 } = {}) {
   if (amount <= 0.01) {
     paint(null, 0, 0);
     return;

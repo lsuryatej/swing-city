@@ -17,6 +17,7 @@
 import { BONES, JOINT_NAMES } from '../sim/skeleton.js';
 import { createCity, createSky, CITY_DEFAULTS } from './city.js';
 import { createHalftone, createKrackle, withChromatic, createSpeedLines } from './comic.js';
+import { drawDetailedFigure } from './figure.js';
 
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 import { WORLD_HEIGHT } from '../contract.js';
@@ -35,8 +36,19 @@ export const RENDER_DEFAULTS = {
   /** Spider-Verse comic pass: offset colour plates, halftone screen, krackle,
    *  speed lines. See src/render/comic.js. */
   comic: true,
-  /** Chromatic fringe in world units at full speed. */
-  chromaAmount: 5.5,
+  /** Draw the costumed figure instead of the flat silhouette. Both consume
+   *  only pose.joints, so this is a pure renderer swap. */
+  detailed: true,
+  /**
+   * Chromatic fringe in world units at full speed.
+   *
+   * Kept BELOW the smallest costume feature on purpose. At 5.5 the offset
+   * plates were wider than the chest panel and the eye lenses, so the figure
+   * read as three overlapping bodies and every piece of costume detail was
+   * lost underneath. Misregistration should be an edge treatment, not a second
+   * silhouette.
+   */
+  chromaAmount: 2.0,
   /** Halftone opacity. Very low on purpose — a screen you notice is too heavy. */
   halftoneAlpha: 0.05,
   parallax: true,
@@ -454,17 +466,13 @@ export function createRenderer(canvas, options = {}) {
         (color, dx, dy) => {
           ctx.save();
           ctx.translate(dx, dy);
-          drawSilhouette(
-            ctx,
-            snapshot,
-            color ? { ...opts, bodyColor: color, rimColor: color } : opts
-          );
+          paintFigure(color ? { ...opts, bodyColor: color, rimColor: color } : opts);
           ctx.restore();
         },
         opts.reducedMotion ? 0 : amount
       );
     } else {
-      drawSilhouette(ctx, snapshot, opts);
+      paintFigure(opts);
     }
 
     if (opts.debug) {
@@ -486,6 +494,33 @@ export function createRenderer(canvas, options = {}) {
         ctx.fillRect(0, 0, vw, vh);
         ctx.restore();
       }
+    }
+  }
+
+  /**
+   * The character seam, in one place.
+   *
+   * The chromatic pass calls this three times with overridden colours, so both
+   * renderers have to accept the same override shape. For the detailed figure a
+   * colour override means "flatten the whole costume to this colour", which is
+   * exactly what a printing plate is.
+   */
+  function paintFigure(o) {
+    if (o.detailed) {
+      const flat = o.bodyColor
+        ? {
+            ...o,
+            figureColors: {
+              suit: o.bodyColor, ink: o.bodyColor, red: o.bodyColor,
+              redDeep: o.bodyColor, lens: o.bodyColor, lensEdge: o.bodyColor,
+              sole: o.bodyColor, hood: o.bodyColor,
+            },
+            rimColor: o.bodyColor,
+          }
+        : o;
+      drawDetailedFigure(ctx, snapshot, flat);
+    } else {
+      drawSilhouette(ctx, snapshot, o);
     }
   }
 
