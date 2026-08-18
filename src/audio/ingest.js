@@ -8,6 +8,7 @@
  */
 
 import * as cache from './cache.js';
+import { extractCoverArt } from './artwork.js';
 import { trackKey, fileKey } from './cache.js';
 
 /** Extensions we'll attempt. Actual support is decided by decodeAudioData. */
@@ -65,13 +66,17 @@ export async function loadFile(file, onProgress, analyze) {
   onProgress('reading', 0);
   const [key, bytes] = await Promise.all([fileKey(file), file.arrayBuffer()]);
 
+  // Pull embedded cover art before decode consumes the buffer. Most real MP3s
+  // carry an APIC frame, so a dropped file usually arrives with its album.
+  const art = extractCoverArt(bytes)?.url ?? null;
+
   onProgress('decoding', 0.15);
   const buffer = await decode(bytes);
 
   let beatMap = await cache.get(key);
   if (beatMap) {
     onProgress('ready', 1);
-    return { buffer, beatMap, meta: metaFromFile(file, key), fromCache: true };
+    return { buffer, beatMap, meta: { ...metaFromFile(file, key), art }, fromCache: true };
   }
 
   onProgress('analysing', 0.3);
@@ -81,7 +86,7 @@ export async function loadFile(file, onProgress, analyze) {
   await cache.put(key, beatMap);
 
   onProgress('ready', 1);
-  return { buffer, beatMap, meta: metaFromFile(file, key), fromCache: false };
+  return { buffer, beatMap, meta: { ...metaFromFile(file, key), art }, fromCache: false };
 }
 
 /**

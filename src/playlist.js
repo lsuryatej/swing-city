@@ -44,6 +44,9 @@ function normalise(t) {
   return {
     ...t,
     beatMapUrl: t.beatMapUrl ?? `/audio/beatmaps/${t.id}.json`,
+    // Optional. Drop a square JPG/PNG at public/audio/art/<id>.jpg and add
+    // `"art": "/audio/art/<id>.jpg"` to the manifest entry.
+    art: t.art ?? null,
   };
 }
 

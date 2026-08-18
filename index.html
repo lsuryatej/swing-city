@@ -137,6 +137,9 @@
         transition: transform 0.5s ease;
       }
       #panel.playing #art span { animation: spin 6s linear infinite; }
+      /* The dark centre reads as a record label on the gradient; over real
+         cover art it just punches a hole, so it goes away. */
+      #art.has-art span { display: none; }
       @keyframes spin { to { transform: rotate(360deg); } }
 
       #meta { flex: 1 1 auto; min-width: 0; }

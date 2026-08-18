@@ -60,6 +60,25 @@ const mmss = (t) => {
   return `${m}:${String(sec).padStart(2, '0')}`;
 };
 
+/**
+ * Show a cover if we have one, otherwise fall back to the generated gradient.
+ *
+ * Curated tracks get art from the manifest; dropped files get it from their
+ * ID3 APIC frame. Either way a missing cover is normal, not an error — the
+ * gradient is a designed state, not a broken image.
+ */
+function setArtwork(url) {
+  if (url) {
+    dom.art.style.backgroundImage = `url("${url}")`;
+    dom.art.style.backgroundSize = 'cover';
+    dom.art.style.backgroundPosition = 'center';
+    dom.art.classList.add('has-art');
+  } else {
+    dom.art.style.backgroundImage = '';
+    dom.art.classList.remove('has-art');
+  }
+}
+
 /** Keeps the button glyph, the aria-label and the spinning artwork in sync. */
 function setPlayingUI(playing) {
   dom.ppIcon?.setAttribute('d', playing ? ICON_PAUSE : ICON_PLAY);
@@ -179,6 +198,7 @@ async function load(fn) {
     state.beatCursor = 0;
     state.choreographed = beatMap.bpmConfidence >= CONFIDENCE_FLOOR;
 
+    setArtwork(meta.art);
     dom.title.textContent = meta.title;
     dom.artist.textContent = meta.artist;
     // The mode readout folded into the time line when the panel became a
