@@ -509,3 +509,43 @@ with `.truth.json` sidecars — `four-on-floor-{90,128,174}` (easy),
 Real tracks in `public/audio/scratch/` (gitignored): `whats-up-danger`,
 `calling`, `loser`, `oh-yeah`, plus `*-CLICKS.mp3` renders. Move these into
 `public/audio/` and add to `manifest.json` when ready to ship them.
+
+---
+
+## Character rendering: three renderers, silhouette is the shipping one
+
+All three consume ONLY `pose.joints`, so they are interchangeable with no
+change to physics, skeleton solve, or the comic pass. Flags in
+`RENDER_DEFAULTS`:
+
+| Renderer | Flag | State |
+|---|---|---|
+| Silhouette (`canvas.js`) | both flags false | **SHIPPING** |
+| Procedural costume (`figure.js`) | `detailed: true` | works, kept |
+| Sprite rig (`sprite-figure.js`) | `sprites: true` | works, kept, parked |
+
+**Why the silhouette won.** A rigid cutout rig shows a seam at every joint
+because pieces rotate without deforming — a shoulder cannot compress, a hip
+cannot reshape. At play size that reads worse than a clean solid shape. The
+user's verdict, and it is correct.
+
+**The sprite path is not wasted.** `public/figure/*.png` (six AI-generated
+limb assets) plus a measured pivot table are in the repo and working. It is
+the right raw material if this is revisited.
+
+**If revisiting, the real fix is mesh deformation, not more sprite tuning.**
+Rive or Spine bind artwork to bones that BEND it. Honest effort estimate for
+someone new to those tools: ~5-10h learning, ~10-20h rigging with mesh, ~5-10h
+wiring the runtime to our joint solver — call it 20-40 hours, mostly art
+skill. Note both tools are built for AUTHORED animation (play a walk cycle),
+whereas we need external physics to drive bones every frame. Spine's web
+runtime exposes direct bone transforms and suits that better; Spine mesh
+deformation requires the Professional tier (~$349). Rive has a usable free
+tier but driving 13 joints externally is more awkward.
+
+**Cheaper and probably better: improve the silhouette itself.** One continuous
+closed path around the whole body instead of 12 separate capsules, with
+anatomically-weighted radii, plus real hands and feet. That removes the joint
+bumps and the uniform-tube look — the two things that make the current
+silhouette read as a skeleton with thickness — with no assets, no new tools,
+and no runtime cost.

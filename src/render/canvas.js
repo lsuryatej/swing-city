@@ -39,11 +39,15 @@ export const RENDER_DEFAULTS = {
   comic: true,
   /** Draw the costumed figure instead of the flat silhouette. Both consume
    *  only pose.joints, so this is a pure renderer swap. */
-  detailed: true,
+  // OFF. Both the procedural costume and the sprite rig are kept and working,
+  // but the silhouette reads better at play size. A rigid cutout rig shows a
+  // seam at every joint because pieces rotate without deforming, and that
+  // reads worse than a clean solid shape. Set either flag true to compare.
+  detailed: false,
   /** Use the hand-drawn sprite assets when they have loaded. Falls back to the
    *  procedural figure automatically, so a missing asset degrades rather than
    *  rendering nothing. */
-  sprites: true,
+  sprites: false,
   /**
    * Chromatic fringe in world units at full speed.
    *
