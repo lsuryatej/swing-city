@@ -89,101 +89,169 @@
       #enter:active:not(:disabled) { transform: translateY(1px); }
       #enter:disabled { opacity: 0.4; cursor: default; }
 
-      /* --- Player panel ------------------------------------------------ */
+      /* --- Player panel ------------------------------------------------ *
+       * A bottom-centred pill. Centring rather than corner-anchoring keeps
+       * the character, which lives near the middle of frame, clear of it —
+       * and a single horizontal row reads as a player at a glance where a
+       * stacked card reads as a dialog.                                     */
 
       #panel {
         position: fixed;
-        left: max(1rem, env(safe-area-inset-left));
-        bottom: max(1rem, env(safe-area-inset-bottom));
+        left: 50%;
+        transform: translateX(-50%);
+        bottom: max(1.4rem, env(safe-area-inset-bottom));
         z-index: 10;
-        width: min(320px, calc(100vw - 2rem));
-        padding: 1rem 1.1rem 1.1rem;
+        display: flex;
+        align-items: center;
+        gap: 0.85rem;
+        padding: 0.5rem 0.75rem 0.5rem 0.5rem;
+        width: min(430px, calc(100vw - 2rem));
         border: 1px solid var(--edge);
-        border-radius: 14px;
+        border-radius: 999px;
         background: var(--panel);
-        backdrop-filter: blur(14px);
-        -webkit-backdrop-filter: blur(14px);
+        backdrop-filter: blur(18px);
+        -webkit-backdrop-filter: blur(18px);
         transition: opacity 0.4s ease;
       }
       #panel.hidden { opacity: 0; pointer-events: none; }
 
+      /* Artwork slot. No cover art exists, so it doubles as the playlist
+         toggle — which is also where the hidden track list lives. */
+      #art {
+        flex: 0 0 auto;
+        width: 42px;
+        height: 42px;
+        padding: 0;
+        border: 1px solid var(--edge);
+        border-radius: 50%;
+        background: linear-gradient(140deg, #2b3d6b, #6d2b4e 60%, #b8434f);
+        cursor: pointer;
+        position: relative;
+        overflow: hidden;
+      }
+      #art span {
+        position: absolute;
+        inset: 30%;
+        border-radius: 50%;
+        background: rgba(5, 7, 14, 0.75);
+        transition: transform 0.5s ease;
+      }
+      #panel.playing #art span { animation: spin 6s linear infinite; }
+      @keyframes spin { to { transform: rotate(360deg); } }
+
+      #meta { flex: 1 1 auto; min-width: 0; }
       #title {
-        font-size: 1rem;
+        font-size: 0.85rem;
         font-weight: 600;
         letter-spacing: -0.01em;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
       }
-      #artist { font-size: 0.8rem; color: var(--dim); margin-top: 0.15rem; }
-      #mode {
-        font-family: var(--mono);
-        font-size: 0.68rem;
-        color: var(--faint);
-        margin-top: 0.5rem;
-        letter-spacing: 0.02em;
+      #artist {
+        font-size: 0.72rem;
+        color: var(--dim);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
       }
-      #mode.warn { color: var(--warn); }
+      #time {
+        font-family: var(--mono);
+        font-size: 0.62rem;
+        color: var(--faint);
+        margin-top: 0.15rem;
+      }
+      #mode { display: none; }
+      #bpm { margin-left: 0.4rem; opacity: 0.75; }
+      #bpm.warn { color: var(--warn); opacity: 1; }
 
+      .transport { display: flex; align-items: center; gap: 0.3rem; flex: 0 0 auto; }
+      .transport button {
+        appearance: none;
+        display: grid;
+        place-items: center;
+        width: 30px;
+        height: 30px;
+        padding: 0;
+        border: 0;
+        border-radius: 50%;
+        background: transparent;
+        color: var(--dim);
+        cursor: pointer;
+        transition: color 0.15s, background 0.15s, transform 0.1s;
+      }
+      .transport button:hover { color: var(--ink); }
+      .transport button:active { transform: scale(0.92); }
+      .transport button.primary {
+        width: 36px;
+        height: 36px;
+        background: var(--ink);
+        color: #05070e;
+      }
+      .transport button.primary:hover { background: #fff; }
+      .transport svg { width: 15px; height: 15px; }
+      .transport svg path { fill: currentColor; stroke: currentColor; stroke-width: 2; stroke-linejoin: round; }
+      .transport .primary svg { width: 14px; height: 14px; }
+
+      /* Seek sits as a hairline along the pill's lower edge rather than as a
+         control of its own — visible progress, no extra row. */
       #seek {
         appearance: none;
-        width: 100%;
-        height: 3px;
-        margin: 0.85rem 0 0.6rem;
-        background: rgba(255, 255, 255, 0.12);
+        position: absolute;
+        left: 6%;
+        bottom: 5px;
+        width: 88%;
+        height: 2px;
+        margin: 0;
+        background: rgba(255, 255, 255, 0.14);
         border-radius: 2px;
         cursor: pointer;
       }
       #seek::-webkit-slider-thumb {
         appearance: none;
-        width: 11px;
-        height: 11px;
+        width: 8px; height: 8px;
         border-radius: 50%;
         background: var(--accent);
       }
       #seek::-moz-range-thumb {
-        width: 11px; height: 11px; border: 0;
+        width: 8px; height: 8px; border: 0;
         border-radius: 50%; background: var(--accent);
       }
 
-      .transport { display: flex; gap: 0.4rem; }
-      .transport button {
-        appearance: none;
-        flex: 1;
-        border: 1px solid var(--edge);
-        background: rgba(255, 255, 255, 0.04);
-        color: var(--ink);
-        font-family: var(--mono);
-        font-size: 0.72rem;
-        padding: 0.4rem 0;
-        border-radius: 7px;
-        cursor: pointer;
-        transition: background 0.15s, transform 0.1s;
-      }
-      .transport button:hover { background: rgba(255, 255, 255, 0.09); }
-      .transport button:active { transform: translateY(1px); }
-
+      /* Track list is hidden until the artwork is clicked. */
       #tracks {
+        position: absolute;
+        left: 0;
+        bottom: calc(100% + 0.6rem);
+        width: 100%;
         list-style: none;
-        margin: 0.8rem 0 0;
-        padding: 0.65rem 0 0;
-        border-top: 1px solid var(--edge);
-        max-height: 30vh;
+        margin: 0;
+        padding: 0.4rem;
+        border: 1px solid var(--edge);
+        border-radius: 14px;
+        background: var(--panel);
+        backdrop-filter: blur(18px);
+        -webkit-backdrop-filter: blur(18px);
+        max-height: 40vh;
         overflow-y: auto;
+        opacity: 0;
+        visibility: hidden;
+        transform: translateY(6px);
+        transition: opacity 0.2s, transform 0.2s, visibility 0.2s;
       }
+      #panel.open #tracks { opacity: 1; visibility: visible; transform: none; }
       #tracks li {
-        font-size: 0.8rem;
+        font-size: 0.78rem;
         color: var(--dim);
-        padding: 0.32rem 0.4rem;
-        border-radius: 5px;
+        padding: 0.4rem 0.6rem;
+        border-radius: 8px;
         cursor: pointer;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
       }
-      #tracks li:hover { background: rgba(255, 255, 255, 0.05); color: var(--ink); }
+      #tracks li:hover { background: rgba(255, 255, 255, 0.06); color: var(--ink); }
       #tracks li.active { color: var(--accent); }
-      #tracks:empty { display: none; }
 
       /* --- Status / progress ------------------------------------------- */
 
@@ -252,15 +320,24 @@
     </div>
 
     <div id="panel" class="hidden">
-      <div id="title">&mdash;</div>
-      <div id="artist"></div>
-      <div id="mode"></div>
-      <input id="seek" type="range" min="0" max="1000" value="0" aria-label="Seek" />
-      <div class="transport">
-        <button id="prev" type="button">prev</button>
-        <button id="play-pause" type="button">play</button>
-        <button id="next" type="button">next</button>
+      <button id="art" type="button" aria-label="Show tracks"><span></span></button>
+      <div id="meta">
+        <div id="title">&mdash;</div>
+        <div id="artist"></div>
+        <div id="time"><span id="elapsed">0:00</span> / <span id="total">0:00</span> <span id="bpm"></span></div>
       </div>
+      <div class="transport">
+        <button id="prev" type="button" aria-label="Previous">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 6v12M18 6l-9 6 9 6z"/></svg>
+        </button>
+        <button id="play-pause" class="primary" type="button" aria-label="Play">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path id="pp-icon" d="M8 5l11 7-11 7z"/></svg>
+        </button>
+        <button id="next" type="button" aria-label="Next">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 6v12M6 6l9 6-9 6z"/></svg>
+        </button>
+      </div>
+      <input id="seek" type="range" min="0" max="1000" value="0" aria-label="Seek" />
       <ul id="tracks"></ul>
     </div>
 

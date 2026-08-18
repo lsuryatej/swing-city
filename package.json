@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && node tools/strip-scratch.mjs",
     "preview": "vite preview",
     "test": "node --test tests/*.test.mjs",
     "gen:audio": "node tools/make-test-audio.mjs",

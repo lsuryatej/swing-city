@@ -42,7 +42,30 @@ const dom = {
   seek: el('seek'),
   drop: el('drop'),
   mode: el('mode'),
+  art: el('art'),
+  elapsed: el('elapsed'),
+  total: el('total'),
+  ppIcon: el('pp-icon'),
+  bpm: el('bpm'),
 };
+
+/** SVG path data for the play/pause glyph — one <path> that swaps shape. */
+const ICON_PLAY = 'M8 5l11 7-11 7z';
+const ICON_PAUSE = 'M9 5v14M16 5v14';
+
+const mmss = (t) => {
+  if (!Number.isFinite(t) || t < 0) t = 0;
+  const m = Math.floor(t / 60);
+  const sec = Math.floor(t % 60);
+  return `${m}:${String(sec).padStart(2, '0')}`;
+};
+
+/** Keeps the button glyph, the aria-label and the spinning artwork in sync. */
+function setPlayingUI(playing) {
+  dom.ppIcon?.setAttribute('d', playing ? ICON_PAUSE : ICON_PLAY);
+  dom.playPause?.setAttribute('aria-label', playing ? 'Pause' : 'Play');
+  dom.panel.classList.toggle('playing', playing);
+}
 
 const state = {
   player: null,
@@ -158,15 +181,23 @@ async function load(fn) {
 
     dom.title.textContent = meta.title;
     dom.artist.textContent = meta.artist;
-    dom.mode.textContent = state.choreographed
-      ? `${beatMap.bpm.toFixed(0)} BPM · choreographed`
-      : `${beatMap.bpm.toFixed(0)} BPM · reactive (low confidence)`;
-    dom.mode.classList.toggle('warn', !state.choreographed);
+    // The mode readout folded into the time line when the panel became a
+    // single-row pill. Optional-chained because the element no longer exists
+    // in the markup — writing to it unguarded threw and aborted the rest of
+    // load(), which is why the play button stayed stuck on "play".
+    dom.mode?.classList.toggle('warn', !state.choreographed);
+    dom.bpm.textContent = state.choreographed
+      ? `${beatMap.bpm.toFixed(0)} BPM`
+      : `${beatMap.bpm.toFixed(0)} BPM · reactive`;
+    dom.bpm.classList.toggle('warn', !state.choreographed);
 
     state.player.load(buffer);
     state.player.play(0);
-    setStatus(fromCache ? '' : '');
-    dom.playPause.textContent = 'pause';
+    setStatus('');
+    dom.total.textContent = mmss(buffer.duration);
+    setPlayingUI(true);
+    // Selecting from the list should close it, the way a picker does.
+    dom.panel.classList.remove('open');
   } catch (e) {
     setStatus(e.message);
     console.error(e);
@@ -259,9 +290,16 @@ function renderTrackList() {
   });
 }
 
+/** True while the user is dragging the seek thumb. */
+let scrubbing = false;
+
 function updateSeek(player) {
   const d = player.duration || 1;
-  dom.seek.value = String((player.now() / d) * 1000);
+  const now = player.now();
+  // Do not fight the user's finger: writing the playhead back into the input
+  // every frame yanks the thumb out from under a drag.
+  if (!scrubbing) dom.seek.value = String((now / d) * 1000);
+  dom.elapsed.textContent = mmss(now);
 }
 
 function wireTransport() {
@@ -270,15 +308,32 @@ function wireTransport() {
     if (!p) return;
     if (p.playing) {
       p.pause();
-      dom.playPause.textContent = 'play';
+      setPlayingUI(false);
     } else {
       p.play();
-      dom.playPause.textContent = 'pause';
+      setPlayingUI(true);
     }
+  });
+
+  // Artwork doubles as the playlist toggle; the list is hidden by default so
+  // the player stays a single quiet row over the animation.
+  dom.art.addEventListener('click', () => dom.panel.classList.toggle('open'));
+  document.addEventListener('click', (e) => {
+    if (!dom.panel.contains(e.target)) dom.panel.classList.remove('open');
   });
 
   dom.prev.addEventListener('click', () => selectIndex(state.index - 1));
   dom.next.addEventListener('click', () => selectIndex(state.index + 1));
+
+  dom.seek.addEventListener('pointerdown', () => {
+    scrubbing = true;
+  });
+  const endScrub = () => {
+    scrubbing = false;
+  };
+  dom.seek.addEventListener('pointerup', endScrub);
+  dom.seek.addEventListener('pointercancel', endScrub);
+  window.addEventListener('pointerup', endScrub);
 
   dom.seek.addEventListener('input', () => {
     const p = state.player;

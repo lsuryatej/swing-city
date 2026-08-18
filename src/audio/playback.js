@@ -61,18 +61,25 @@ export function createPlayer() {
 
   function spawn(at) {
     stopNode();
-    node = ctx.createBufferSource();
-    node.buffer = buffer;
-    node.connect(gain);
-    node.onended = () => {
-      // Fires on manual stop too, so only treat it as end-of-track when we
-      // did not initiate it.
-      if (playing && node && !node._cancelled) {
-        playing = false;
-        onEnded?.();
-      }
+    // Bind the handler to THIS node, not to the mutable `node` variable.
+    //
+    // Seeking stops the old source and starts a new one, and the old node's
+    // onended fires afterwards. Reading the shared `node` there meant it
+    // inspected the NEW node's cancelled flag, saw false, and reported
+    // end-of-track — so every scrub advanced the playlist instead of moving
+    // within the song. Capturing `n` makes each handler answer only for its
+    // own node.
+    const n = ctx.createBufferSource();
+    n.buffer = buffer;
+    n.connect(gain);
+    n.onended = () => {
+      if (n._cancelled) return; // stopped deliberately by us
+      if (node !== n) return; // already superseded
+      playing = false;
+      onEnded?.();
     };
-    node.start(0, at);
+    n.start(0, at);
+    node = n;
     startedAt = ctx.currentTime;
     offset = at;
     playing = true;
