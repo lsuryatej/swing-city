@@ -53,7 +53,11 @@ export const RENDER_DEFAULTS = {
    * lost underneath. Misregistration should be an edge treatment, not a second
    * silhouette.
    */
-  chromaAmount: 2.0,
+  // Off. The fringe fights the sprite art at this figure size — it was tuned
+  // against the flat procedural figure, where an edge fringe read as print
+  // misregistration; over drawn limbs it just reads as blur. Raise it to ~2
+  // to bring it back.
+  chromaAmount: 0,
   /** Halftone opacity. Very low on purpose — a screen you notice is too heavy. */
   halftoneAlpha: 0.05,
   parallax: true,

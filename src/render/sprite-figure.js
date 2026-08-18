@@ -44,14 +44,20 @@ const ASSET_DIR = '/figure/';
  * keep thickness sensible when the bone is scaled.
  */
 export const SPRITE_PIVOTS = {
-  torso: { file: 'torso.png', s: [0.06, 0.5], e: [0.86, 0.42] },
-  head: { file: 'head.png', s: [0.22, 0.52], e: [0.76, 0.46] },
-  upperArm: { file: 'upper-arm.png', s: [0.07, 0.5], e: [0.93, 0.5] },
-  // Bone ends at the wrist; the hand overhangs to the right.
-  forearm: { file: 'forearm.png', s: [0.05, 0.42], e: [0.62, 0.5] },
-  thigh: { file: 'thigh.png', s: [0.06, 0.5], e: [0.93, 0.52] },
-  // Bone ends at the ankle; the foot overhangs.
-  shin: { file: 'shin.png', s: [0.07, 0.36], e: [0.76, 0.6] },
+  // MEASURED from each asset's alpha channel, not estimated. The first pass
+  // used eyeballed fractions and the figure visibly came apart — the upper
+  // arm's elbow sits at y 0.318, not the 0.5 a symmetric limb would suggest,
+  // and torso/thigh run the full image width where they were guessed at 0.86
+  // and 0.93. Re-measure with the alpha-scan snippet if the art is redrawn.
+  torso: { file: 'torso.png', s: [0.01, 0.498], e: [0.99, 0.489] },
+  head: { file: 'head.png', s: [0.211, 0.536], e: [0.785, 0.498] },
+  upperArm: { file: 'upper-arm.png', s: [0.01, 0.523], e: [0.99, 0.318] },
+  // End pivot is the WRIST, not the image edge — the hand overhangs to the
+  // right. Measured thickness at the far edge is 0.05, i.e. fingertips.
+  forearm: { file: 'forearm.png', s: [0.01, 0.482], e: [0.62, 0.50] },
+  thigh: { file: 'thigh.png', s: [0.01, 0.474], e: [0.99, 0.563] },
+  // End pivot is the ANKLE; the foot overhangs.
+  shin: { file: 'shin.png', s: [0.01, 0.303], e: [0.76, 0.52] },
 };
 
 /**
