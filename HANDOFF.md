@@ -145,12 +145,26 @@ elapsed/total with BPM inline, icon transport, hairline seek. Cover art comes
 from ID3 APIC frames for dropped files, and from an optional `art` field in
 `manifest.json` for curated tracks.
 
-**Cloudflare Pages is the intended host**, because the payload is almost
-entirely audio and Pages does not meter static bandwidth. `public/_headers`
-mirrors the `headers` block of `vercel.json` — note it is NOT regex, so the
-`/(audio|figure)/(.*)` form becomes one rule per prefix. `.node-version` pins
-the build to Node 22. Deploy is either the GitHub integration (build
-`npm run build`, output `dist`) or `npm run deploy` for a direct upload.
+**Cloudflare is the intended host**, because the payload is almost entirely
+audio and Cloudflare does not meter static bandwidth.
+
+It is a **Worker with static assets, not a Pages project.** Cloudflare's git
+integration now creates a Worker for an imported repo and sets the deploy
+command to `npx wrangler deploy`. `wrangler.jsonc` declares `assets.directory`
+and NO `main`, which is what makes that an assets-only deploy.
+
+⚠️ Without `wrangler.jsonc`, `wrangler deploy` guesses what the project is,
+finds `vite.config.js`, assumes the Workers Vite plugin and fails with
+**"The version of Vite used in the project (5.4.21) cannot be automatically
+configured. Please update the Vite version to at least 6.0.0"**. That message
+is asking for a framework integration this site does not use. Do not upgrade
+Vite to chase it — the fix is the config file.
+
+`public/_headers` mirrors the `headers` block of `vercel.json`; note it is NOT
+regex, so the `/(audio|figure)/(.*)` form becomes one rule per prefix. Workers
+static assets honour `_headers` and `_redirects` the same way Pages does.
+`.node-version` pins the build to Node 22. `wrangler` is a devDependency so CI
+and local deploys agree on a version.
 
 `vercel.json` is kept and still valid, so Vercel remains a working fallback.
 The build is Vercel-ready. `npm run build` strips

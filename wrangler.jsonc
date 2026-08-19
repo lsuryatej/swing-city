@@ -1,0 +1,17 @@
+{
+  // Workers Static Assets, not Pages.
+  //
+  // Cloudflare's git integration now creates a WORKER for an imported repo,
+  // with a deploy command of `npx wrangler deploy`. Without this file wrangler
+  // has to guess what the project is, sees vite.config.js, assumes you want
+  // the Workers Vite plugin, and fails on "Vite must be at least 6.0.0" — which
+  // is a demand for a framework integration this site does not use and does not
+  // need. Declaring `assets` with no `main` makes it an assets-only Worker:
+  // wrangler uploads ./dist and serves it, and never looks at vite.config.js.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "swing-city",
+  "compatibility_date": "2026-08-19",
+  "assets": {
+    "directory": "./dist"
+  }
+}
