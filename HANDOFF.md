@@ -145,7 +145,15 @@ elapsed/total with BPM inline, icon transport, hairline seek. Cover art comes
 from ID3 APIC frames for dropped files, and from an optional `art` field in
 `manifest.json` for curated tracks.
 
-`vercel.json` is valid and the build is Vercel-ready. `npm run build` strips
+**Cloudflare Pages is the intended host**, because the payload is almost
+entirely audio and Pages does not meter static bandwidth. `public/_headers`
+mirrors the `headers` block of `vercel.json` — note it is NOT regex, so the
+`/(audio|figure)/(.*)` form becomes one rule per prefix. `.node-version` pins
+the build to Node 22. Deploy is either the GitHub integration (build
+`npm run build`, output `dist`) or `npm run deploy` for a direct upload.
+
+`vercel.json` is kept and still valid, so Vercel remains a working fallback.
+The build is Vercel-ready. `npm run build` strips
 `dist/audio/scratch` (~70MB of local-only click tracks that `public/` would
 otherwise copy). **dist is now ~56MB**, almost all of it the ten MP3s.
 

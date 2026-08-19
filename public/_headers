@@ -1,0 +1,21 @@
+# Cloudflare Pages headers. Mirrors the `headers` block in vercel.json.
+#
+# Syntax note: this is NOT regex. Pages matches literal paths with `*` splats
+# and `:placeholders`, so the `/(audio|figure)/(.*)` form vercel.json uses has
+# to become one rule per prefix. Every matching rule applies, so the security
+# headers under /* land on the hashed assets too rather than being overridden.
+
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+
+# Vite hashes these filenames, and the audio and sprite names are stable and
+# only ever added to, so a year is safe on all three.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/audio/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/figure/*
+  Cache-Control: public, max-age=31536000, immutable

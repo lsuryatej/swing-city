@@ -14,3 +14,7 @@ import { fileURLToPath } from 'node:url';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 await rm(resolve(root, 'dist/audio/scratch'), { recursive: true, force: true });
 console.log('stripped dist/audio/scratch');
+
+// Finder leaves .DS_Store inside public/, and "copied wholesale" includes it.
+await rm(resolve(root, 'dist/.DS_Store'), { force: true });
+
