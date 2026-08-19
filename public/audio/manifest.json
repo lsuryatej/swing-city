@@ -7,10 +7,46 @@
       "url": "/audio/whats-up-danger.mp3"
     },
     {
+      "id": "sunflower",
+      "title": "Sunflower",
+      "artist": "Post Malone & Swae Lee",
+      "url": "/audio/sunflower.mp3"
+    },
+    {
+      "id": "annihilate",
+      "title": "Annihilate",
+      "artist": "Metro Boomin, Swae Lee, Lil Wayne, Offset",
+      "url": "/audio/annihilate.mp3"
+    },
+    {
+      "id": "am-i-dreaming",
+      "title": "Am I Dreaming",
+      "artist": "Metro Boomin, A$AP Rocky, Roisee",
+      "url": "/audio/am-i-dreaming.mp3"
+    },
+    {
+      "id": "self-love",
+      "title": "Self Love",
+      "artist": "Metro Boomin, Coi Leray",
+      "url": "/audio/self-love.mp3"
+    },
+    {
+      "id": "hummingbird",
+      "title": "Hummingbird",
+      "artist": "Metro Boomin & James Blake",
+      "url": "/audio/hummingbird.mp3"
+    },
+    {
       "id": "calling",
       "title": "Calling",
       "artist": "Metro Boomin, Swae Lee, NAV",
       "url": "/audio/calling.mp3"
+    },
+    {
+      "id": "scared-of-the-dark",
+      "title": "Scared of the Dark",
+      "artist": "Lil Wayne, Ty Dolla $ign & XXXTENTACION",
+      "url": "/audio/scared-of-the-dark.mp3"
     },
     {
       "id": "loser",

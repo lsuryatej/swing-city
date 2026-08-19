@@ -19,6 +19,7 @@ import { createCity, createSky, CITY_DEFAULTS } from './city.js';
 import { createHalftone, createKrackle, withChromatic, createSpeedLines } from './comic.js';
 import { drawDetailedFigure } from './figure.js';
 import { drawSpriteFigure, spritesReady } from './sprite-figure.js';
+import { drawSilhouette } from './silhouette.js';
 
 const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
 import { WORLD_HEIGHT } from '../contract.js';
@@ -82,22 +83,13 @@ export const RENDER_DEFAULTS = {
   accentColor: '#ff4d5e',
 };
 
-/** Bone radii: [rootRadius, tipRadius] in world units. Tapering is what makes
- *  a stack of capsules read as a body instead of a balloon animal. */
-const BONE_RADII = {
-  'hipC>neck': [14, 10.5],
-  'neck>head': [9, 9],
-  'neck>shoulderL': [8, 7],
-  'neck>shoulderR': [8, 7],
-  'shoulderL>elbowL': [7, 5.4],
-  'elbowL>handL': [5.4, 3.4],
-  'shoulderR>elbowR': [7, 5.4],
-  'elbowR>handR': [5.4, 3.4],
-  'hipC>kneeL': [9, 6.2],
-  'kneeL>footL': [6.2, 3.6],
-  'hipC>kneeR': [9, 6.2],
-  'kneeR>footR': [6.2, 3.6],
-};
+/**
+ * The silhouette lives in ./silhouette.js — one continuous outline per limb
+ * chain with anatomical radii, rather than the twelve tapered capsules this
+ * file used to draw. Re-exported here because that is where callers have
+ * always imported it from.
+ */
+export { drawSilhouette, paintBody } from './silhouette.js';
 
 function makeCanvas(w, h) {
   if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(w, h);
@@ -139,64 +131,6 @@ export function taperedCapsule(ctx, x0, y0, r0, x1, y1, r1) {
   ctx.arc(x0, y0, r0, a + h, a - h);
   ctx.arc(x1, y1, r1, a - h, a + h);
   ctx.closePath();
-}
-
-/**
- * THE CHARACTER RENDERER.
- *
- * Consumes `pose.joints` and nothing else about the simulation — no phase, no
- * theta, no anchor. Everything it needs to know about the body's state is
- * already in where the 13 joints are. That is the whole point of the seam.
- *
- * @param {CanvasRenderingContext2D} ctx  Already in world space.
- * @param {{joints: Record<string,{x:number,y:number}>}} pose
- */
-export function drawSilhouette(ctx, pose, opts = {}) {
-  const j = pose.joints;
-  const body = opts.bodyColor || RENDER_DEFAULTS.bodyColor;
-  const rim = opts.rimColor || RENDER_DEFAULTS.rimColor;
-  const rimOffsetX = opts.rimOffsetX ?? -2.2;
-  const rimOffsetY = opts.rimOffsetY ?? -3.2;
-  const scale = opts.figureScale || 1;
-
-  // The rim light is the same silhouette drawn once behind the body, offset a
-  // couple of units toward the light. Cheap, stable, and it does not need a
-  // stroke pass per bone or any blur at all.
-  ctx.save();
-  ctx.translate(rimOffsetX, rimOffsetY);
-  paintBody(ctx, j, rim, scale);
-  ctx.restore();
-
-  paintBody(ctx, j, body, scale);
-}
-
-function paintBody(ctx, j, color, scale) {
-  ctx.fillStyle = color;
-
-  for (let i = 0; i < BONES.length; i++) {
-    const [a, b] = BONES[i];
-    const pa = j[a];
-    const pb = j[b];
-    if (!pa || !pb) continue;
-    const r = BONE_RADII[`${a}>${b}`];
-    if (!r) continue;
-    taperedCapsule(ctx, pa.x, pa.y, r[0] * scale, pb.x, pb.y, r[1] * scale);
-    ctx.fill();
-  }
-
-  // Torso mass: the shoulder span filled as a wedge down to the hips, so the
-  // chest is not just two sticks meeting at the neck.
-  ctx.beginPath();
-  ctx.moveTo(j.shoulderL.x, j.shoulderL.y);
-  ctx.lineTo(j.shoulderR.x, j.shoulderR.y);
-  ctx.lineTo(j.hipC.x, j.hipC.y);
-  ctx.closePath();
-  ctx.fill();
-
-  // Head last, so it sits on top of the neck capsule cleanly.
-  ctx.beginPath();
-  ctx.arc(j.head.x, j.head.y, 13 * scale, 0, Math.PI * 2);
-  ctx.fill();
 }
 
 /**
