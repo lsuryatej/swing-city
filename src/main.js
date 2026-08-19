@@ -107,8 +107,28 @@ const state = {
 // Boot
 // ---------------------------------------------------------------------------
 
+/**
+ * Honour the OS setting. The sandbox has always done this; the actual site
+ * never did, which was a real gap and became an urgent one once the beat
+ * accents went in — those are the parts someone with vestibular sensitivity
+ * most needs a way out of.
+ *
+ * Read live rather than once: people change this setting because something on
+ * screen is already bothering them, and a page that only checks at boot makes
+ * them reload to escape.
+ */
+const reducedMotionQuery =
+  typeof window !== 'undefined' && window.matchMedia
+    ? window.matchMedia('(prefers-reduced-motion: reduce)')
+    : null;
+
 async function boot() {
-  state.renderer = createRenderer(dom.stage);
+  state.renderer = createRenderer(dom.stage, {
+    reducedMotion: !!reducedMotionQuery?.matches,
+  });
+  reducedMotionQuery?.addEventListener?.('change', (e) => {
+    state.renderer.setOption('reducedMotion', e.matches);
+  });
   // The grapple targets real roofs, so it needs the city's building lookup.
   // Without this it falls back to anchors in empty sky, which is what made the
   // pendulum build feel abstract.
@@ -263,7 +283,16 @@ function frame(t) {
   }
 
   state.swinger.update(dt, input);
-  state.renderer.render({ pose: state.swinger.pose, dt, energy: input.energy });
+  // The renderer used to receive only { pose, dt, energy }. energy is a
+  // SMOOTHED signal, so every visual accent it drove was merely correlated
+  // with the beat rather than locked to it — which is why the choreography was
+  // audible but not visible. beatPulse is the grid itself.
+  state.renderer.render({
+    pose: state.swinger.pose,
+    dt,
+    energy: input.energy,
+    beatPulse: input.beatPulse,
+  });
 
   if (player?.playing) updateSeek(player);
 }

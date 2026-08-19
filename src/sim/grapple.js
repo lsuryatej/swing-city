@@ -110,6 +110,20 @@ export const SWING_DEFAULTS = {
    * every anchor was a fallback point in empty sky.
    */
   minFreefallTime: 1.15,
+  /**
+   * Fraction of minFreefallTime at which the NEXT anchor is committed.
+   *
+   * The anchor used to be chosen at the instant of firing, which left the
+   * renderer nothing to telegraph: the target did not exist until it was
+   * already being hit. Committing early exposes it as `pose.nextAnchor` for a
+   * count-in, and costs nothing — an anchor picked 0.4s early is still a roof
+   * ahead of him, and a target that stops moving is exactly what makes the
+   * count-in legible. Re-validated at fire time regardless.
+   */
+  anchorCommitAt: 0.35,
+  /** Clearance required of a roof at COMMIT time. A little above the 40 the
+   *  physics needs, purely as margin. */
+  commitClearance: 70,
   /** Extra kick at release, scaled by energy. */
   releaseKick: 140,
 
@@ -160,18 +174,31 @@ export function createSwinger(options = {}) {
   let energy = 0.5;
   let swingCount = 0;
   let ropeTarget = 0;
+  /** The anchor the next web WILL go to, committed before the fire beat so the
+   *  renderer can telegraph it. Null whenever there is nothing to telegraph. */
+  let plannedAnchor = null;
 
   /* ------------------------------------------------------------------ *
    * Anchor selection                                                    *
    * ------------------------------------------------------------------ */
 
-  function chooseAnchor() {
+  /**
+   * @param {number} clearance  How far above him a roof must sit to qualify.
+   *
+   * The default is the physical minimum. The COMMIT path asks for much more,
+   * and has to: freefall begins with an upward launch, so he is often HIGHER
+   * at the fire beat than he was when the target was picked. A roof chosen
+   * with only the minimum clearance is therefore routinely invalid by the time
+   * it is used, and re-picking at the last moment moves the target the ring has
+   * spent four beats pointing at. Measured, that was 6 of 17 swings.
+   */
+  function chooseAnchor(clearance = 40) {
     if (findBuildings) {
       // Only roofs actually ABOVE him are usable: webbing a roof at or below
       // your own height gives a sideways rope that carries no weight, which is
       // what produced a runaway descent in an earlier build.
       const usable = findBuildings(hip.x, cfg.minAnchorAhead, cfg.maxAnchorAhead)
-        .filter((b) => b.y < hip.y - 40);
+        .filter((b) => b.y < hip.y - clearance);
 
       if (usable.length) {
         // Vary WHICH of the tall candidates gets used.
@@ -417,13 +444,41 @@ export function createSwinger(options = {}) {
       // no building ever qualified as an anchor and every web went to empty
       // sky. Requiring a minimum freefall restores the airtime AND puts him
       // back among the buildings. Still beat-locked, just not every beat.
+      // Commit the target ahead of the fire beat — but only once he is past
+      // the apex and descending.
+      //
+      // Freefall STARTS with an upward launch, so committing on a timer alone
+      // picks a roof that clears him now and may not clear him at the fire
+      // beat, because he is still rising toward it. Measured: 6 of 17 swings
+      // re-picked at the last moment, which moves the target the ring has
+      // spent four beats pointing at — the count-in becomes a lie exactly when
+      // someone is watching it most closely.
+      //
+      // After the apex his altitude only decreases, so any roof above him now
+      // is still above him at the fire beat. The commit is then correct by
+      // construction rather than by margin, which is why this is a phase test
+      // and not a bigger clearance number.
+      if (
+        !plannedAnchor &&
+        vel.y >= 0 &&
+        freefallTime >= cfg.minFreefallTime * cfg.anchorCommitAt
+      ) {
+        plannedAnchor = chooseAnchor(cfg.commitClearance);
+      }
+
       if (input.beatPulse && freefallTime >= cfg.minFreefallTime) {
         currentSwing = next ?? null;
-        fireAt(chooseAnchor());
+        // Re-validate: he has been falling since the commit, so a target that
+        // was above him then may not be now. A sideways rope carries no weight
+        // and produced the runaway descent documented in chooseAnchor.
+        const t = plannedAnchor && plannedAnchor.y < hip.y - 40 ? plannedAnchor : chooseAnchor();
+        plannedAnchor = null;
+        fireAt(t);
       }
 
       // Emergency recovery — see emergencyDrop.
       if (phase === 'freefall' && hip.y > cfg.cruiseY + cfg.emergencyDrop) {
+        plannedAnchor = null;
         fireAt(chooseAnchor());
       }
     }
@@ -435,6 +490,9 @@ export function createSwinger(options = {}) {
 
   const pose = {
     anchor,
+    /** Where the NEXT web will attach, or null. Renderer-facing: this is what
+     *  lets the target be telegraphed before it is used. */
+    nextAnchor: null,
     hip,
     webTip,
     velocity: vel,
@@ -452,6 +510,7 @@ export function createSwinger(options = {}) {
     pose.webLength = attached || phase === 'fire' ? Math.hypot(hip.x - anchor.x, hip.y - anchor.y) : 0;
     pose.phase = phase;
     pose.webProgress = phase === 'fire' ? 0.5 : attached ? 1 : 0;
+    pose.nextAnchor = phase === 'freefall' ? plannedAnchor : null;
   }
 
   return {

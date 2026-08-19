@@ -14,7 +14,7 @@
  * When this is swapped for a detailed Miles, the physics does not move.
  */
 
-import { BONES, JOINT_NAMES } from '../sim/skeleton.js';
+import { BONES, JOINT_NAMES, criticalStep } from '../sim/skeleton.js';
 import { createCity, createSky, CITY_DEFAULTS } from './city.js';
 import { createHalftone, createKrackle, withChromatic, createSpeedLines } from './comic.js';
 import { drawDetailedFigure } from './figure.js';
@@ -68,6 +68,27 @@ export const RENDER_DEFAULTS = {
   parallax: true,
   debug: false,
   reducedMotion: false,
+  /**
+   * Beat accents.
+   *
+   * DELIBERATELY MOTION, NOT LUMINANCE. A whole-frame brightness pulse on
+   * every beat is a photosensitivity hazard, not a style choice: WCAG 2.3.1
+   * puts the limit at three flashes per second over a large area, and a
+   * 174 BPM track beat-flashing sits at 2.9Hz — inside the letter of the rule
+   * and well past what anyone can stand to watch. It is worse again for the
+   * saturated-red palettes, which the same guideline singles out.
+   *
+   * So the accents here change POSITION and SCALE, which carry no flash risk
+   * at any tempo, and the only large-area colour changes in the project are
+   * required to cross-fade over seconds rather than cut.
+   */
+  beatAccents: true,
+  /** Scale punch on the fire beat. Tiny: this should be felt, not seen. */
+  beatKick: 0.014,
+  /** Seconds for the kick to settle. */
+  beatKickHalfLife: 0.075,
+  /** Colour of the count-in ring on the next anchor. */
+  targetColor: '#ff4d5e',
   /** World height mapped to the viewport height, before zoom. */
   zoom: 1.25,
   /** Camera spring half-life, seconds. */
@@ -222,6 +243,14 @@ export function createRenderer(canvas, options = {}) {
   let vw = 1;
   let vh = 1;
   let scale = 1;
+  /** `scale` with the beat kick folded in. Everything that draws reads THIS,
+   *  never `scale` — the city has to punch with the character or the kick
+   *  reads as the character changing size instead of as a hit on the frame. */
+  let drawScale = 1;
+  const kick = { x: 0, v: 0 };
+  /** Beats seen since the last count-in ring reset, for the ring pulse. */
+  let ringPulse = 0;
+  let lastPhase = 'freefall';
 
   // "On twos" snapshot: a second set of 13 joint objects, allocated once and
   // overwritten at TWOS_HZ. The pose passed to drawSilhouette is this one.
@@ -252,6 +281,7 @@ export function createRenderer(canvas, options = {}) {
     canvas.width = Math.round(vw * dpr);
     canvas.height = Math.round(vh * dpr);
     scale = (vh / WORLD_HEIGHT) * opts.zoom;
+    drawScale = scale;
   }
 
   /** Exact critically-damped step, same maths as the skeleton springs. */
@@ -297,10 +327,10 @@ export function createRenderer(canvas, options = {}) {
       // With parallax off, every layer moves with the world: the skyline is
       // still there, it just stops sliding against itself.
       const p = opts.parallax && !opts.reducedMotion ? layer.parallax : 1;
-      const tileW = layer.width * scale;
-      const originX = halfW - cam.x * p * scale;
-      const originY = halfH - cam.y * p * scale;
-      const drawH = layer.height * scale;
+      const tileW = layer.width * drawScale;
+      const originX = halfW - cam.x * p * drawScale;
+      const originY = halfH - cam.y * p * drawScale;
+      const drawH = layer.height * drawScale;
 
       const first = Math.floor((0 - originX) / tileW);
       const last = Math.ceil((vw - originX) / tileW);
@@ -335,7 +365,7 @@ export function createRenderer(canvas, options = {}) {
     const ey = hand.y + (a.y - hand.y) * p;
 
     ctx.strokeStyle = opts.webColor;
-    ctx.lineWidth = 2.2 / scale + 0.6;
+    ctx.lineWidth = 2.2 / drawScale + 0.6;
     ctx.beginPath();
     ctx.moveTo(hand.x, hand.y);
     ctx.lineTo(ex, ey);
@@ -348,13 +378,71 @@ export function createRenderer(canvas, options = {}) {
   }
 
   /**
+   * THE COUNT-IN.
+   *
+   * This is the one thing on screen that a looped clip could not fake. Every
+   * other accent REACTS to the music, and a reaction is exactly what you get
+   * for free by cutting a loop to a track. Anticipation is not: the ring sits
+   * on the roof the web has not been fired at yet, and pulses once per beat
+   * until the web arrives exactly on one. Because the whole beat grid is known
+   * before a note plays, the target can be telegraphed — and a viewer who
+   * watches the target count itself in and then get hit dead on time has been
+   * shown the choreography rather than told about it.
+   *
+   * Small area on purpose. See RENDER_DEFAULTS.beatAccents for why nothing
+   * large-area is allowed to pulse at beat rate.
+   */
+  function drawTarget(pose) {
+    const a = pose.nextAnchor;
+    if (!a) return;
+
+    // Each beat snaps the ring wide; it contracts toward the roof between
+    // beats. Contraction is the direction that reads as "closing in".
+    const t = clamp(ringPulse, 0, 1);
+    const r = 26 + t * 42;
+    const alpha = 0.28 + (1 - t) * 0.45;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = opts.targetColor;
+    ctx.lineWidth = 2.6 / drawScale;
+    ctx.beginPath();
+    ctx.arc(a.x, a.y, r, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // A fixed inner tick, so the ring has something to close ON.
+    ctx.globalAlpha = 0.5;
+    ctx.beginPath();
+    ctx.arc(a.x, a.y, 5.5, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  /**
    * @param {object} state
    * @param {object} state.pose  A Pose from the swinger.
    * @param {number} state.dt    Real frame delta, seconds.
+   * @param {boolean} state.beatPulse  True on the single frame a beat crosses.
    */
   function render(state) {
     const { pose } = state;
     const dt = Math.min(state.dt || 1 / 60, 0.1);
+    const accents = opts.beatAccents && !opts.reducedMotion;
+
+    // --- Beat accents ------------------------------------------------------
+    if (state.beatPulse && accents) ringPulse = 1;
+    ringPulse = Math.max(0, ringPulse - dt * 3.4);
+
+    // The kick fires on the FIRE transition, not on every beat: the fire is
+    // itself beat-locked (see grapple.js fixedStep), so this punches the frame
+    // on the moment the web leaves his hand and never more than once a cycle.
+    if (pose.phase === 'fire' && lastPhase === 'freefall' && accents) {
+      kick.x = opts.beatKick;
+      kick.v = 0;
+    }
+    lastPhase = pose.phase;
+    criticalStep(kick, 0, opts.beatKickHalfLife, dt);
+    drawScale = scale * (1 + kick.x);
 
     updateCamera(pose.joints.hipC, dt);
 
@@ -388,12 +476,12 @@ export function createRenderer(canvas, options = {}) {
 
     // World space: origin at the camera, scaled, centred on the viewport.
     ctx.setTransform(
-      scale * dpr,
+      drawScale * dpr,
       0,
       0,
-      scale * dpr,
-      (vw * 0.5 - cam.x * scale) * dpr,
-      (vh * 0.5 - cam.y * scale) * dpr
+      drawScale * dpr,
+      (vw * 0.5 - cam.x * drawScale) * dpr,
+      (vh * 0.5 - cam.y * drawScale) * dpr
     );
 
     const gr = 160;
@@ -405,6 +493,7 @@ export function createRenderer(canvas, options = {}) {
       gr * 2
     );
 
+    drawTarget(pose);
     drawWeb(snapshot);
 
     // Krackle lives in world space so the burst stays attached to where the
@@ -443,8 +532,8 @@ export function createRenderer(canvas, options = {}) {
     }
 
     if (opts.debug) {
-      ctx.lineWidth = 2 / scale;
-      drawDebugSkeleton(ctx, snapshot, { lineWidth: 2 / scale });
+      ctx.lineWidth = 2 / drawScale;
+      drawDebugSkeleton(ctx, snapshot, { lineWidth: 2 / drawScale });
     }
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);

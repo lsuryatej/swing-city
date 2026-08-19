@@ -134,15 +134,21 @@ function frame(nowMs) {
     }
   }
 
-  swinger.update(dt, {
+  const input = {
     now: metro.clock,
     energy: metro.lastPulse ? metro.lastStrength : 0.12,
     nextSwing,
     beatPulse: metro.lastPulse,
     beatStrength: metro.lastStrength,
-  });
+  };
+  swinger.update(dt, input);
 
-  renderer.render({ pose: swinger.pose, dt });
+  renderer.render({
+    pose: swinger.pose,
+    dt,
+    energy: input.energy,
+    beatPulse: input.beatPulse,
+  });
 
   hudAccum += dt;
   if (hudAccum > 0.12) {

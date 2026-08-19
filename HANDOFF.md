@@ -58,6 +58,15 @@ before a note plays**, so the animation can plan rather than react.
 The onset envelope's frame rate is `sampleRate / HOP_SIZE`, so halving the rate
 halves its *time* resolution and the ±60ms offset assertions fail immediately.
 
+### ⚠️ There are TWO swing models
+
+`src/sim/grapple.js` is what the SITE runs. `src/sim/index.js` is the earlier
+pendulum swinger, and it is what `sandbox.html` still drives. They have
+different phase names (`freefall` vs `flight`), so **a green sandbox proves
+nothing about shipping behaviour** and neither does `tests/sim.test.mjs`, which
+covers `index.js`. `tests/grapple.test.mjs` covers the real one. This cost real
+time to notice — the sandbox HUD says `flight`, a phase grapple.js never sets.
+
 ### Simulation — working, `src/sim/grapple.js`
 
 Phases: `freefall → fire → swing → release → freefall`.
@@ -81,6 +90,47 @@ dissipation it diverges.
 Anchors are real roofs, chosen from the tallest few by a rotating counter.
 Taking the single tallest made every swing identical, since the skyline is one
 repeating tile — the whole world offered only five distinct anchors.
+
+### Beat legibility — the count-in
+
+The choreography was audible and invisible. Cause, found 2026-08-20: `main.js`
+called `renderer.render({ pose, dt, energy })`. `beatPulse` and `nextSwing` were
+computed and passed to the SIMULATION only. `energy` is a smoothed signal, so
+every visual accent it drove was merely correlated with the beat rather than
+locked to it, and the one genuinely beat-locked event — the web fire — is the
+softest visual event there is, because the character just keeps moving through
+it.
+
+**The count-in** (`drawTarget` in `canvas.js`) is the fix that matters. The
+anchor used to be chosen at the instant of firing; it is now committed early and
+exposed as `pose.nextAnchor`, and a ring pulses on it once per beat until the
+web arrives. Every other accent REACTS, and a reaction is what you get free by
+cutting a loop to a track. Anticipation is not: the whole grid is known before a
+note plays, so the target can be telegraphed, and a viewer who watches it count
+itself in and then get hit on time has been shown the choreography.
+
+⚠️ **Commit at the apex, not on a timer.** Freefall STARTS with an upward launch,
+so a roof that clears him at commit time may not clear him at the fire beat.
+Measured: 6 of 17 swings re-picked at the last moment, moving the target the ring
+had spent four beats pointing at. After the apex his altitude only increases, so
+the commit is correct by construction. A bigger clearance number does NOT fix
+this — tried 240, it got worse.
+
+Emergency recovery deliberately clears `plannedAnchor` and fires at whatever it
+can reach. The ring vanishes rather than redirecting: an abandoned count-in is
+honest, a redirected one is not. `tests/grapple.test.mjs` asserts the telegraph
+is honoured on 100% of non-emergency fires.
+
+⚠️ **Beat accents are MOTION, never luminance.** A whole-frame brightness pulse
+per beat is a photosensitivity hazard, not a style choice — WCAG 2.3.1 caps
+flashes at three per second over a large area, and a 174 BPM track beat-flashing
+sits at 2.9Hz, inside the letter of the rule and past what anyone can watch. The
+saturated-red palettes under consideration are singled out by the same
+guideline. So the kick is a 1.4% scale punch on the fire beat and the ring is a
+small stroked circle; any large-area colour change must cross-fade over seconds.
+`main.js` now honours `prefers-reduced-motion` (it never did — only the sandbox
+did) and re-reads it live, because people change that setting when something on
+screen is already bothering them.
 
 ### Rendering — three character renderers, silhouette ships
 
@@ -171,6 +221,24 @@ The build is Vercel-ready. `npm run build` strips
 `dist/audio/scratch` (~70MB of local-only click tracks that `public/` would
 otherwise copy). **dist is now ~56MB**, almost all of it the ten MP3s.
 
+### Art direction — undecided, six candidates
+
+`style-lab.html` (dev only) renders one swing frame in six treatments. The
+comparison says the current look is the WEAKEST of the six: the figure and the
+buildings sit at nearly the same value, so the character sinks into the city.
+What separates the working ones is a contrast strategy — saturated sky,
+near-black city, hot rim on a near-black figure. Nothing to do with texture.
+
+Leading candidate is E (noir palette + print texture); F is the same recipe in a
+cool key, which is the evidence that this is a palette SYSTEM rather than one
+lucky set of colours. Not yet wired into `createRenderer` on purpose — the lab
+composites by hand so nothing reaches shipping code before a direction is picked.
+
+Note for whoever wires it up: `chromaAmount` was zeroed because misregistration
+read as blur over the DETAILED figure. The silhouette is flat again, which is
+what that effect was originally tuned against, so it should come back cleanly —
+but check it at speed, not in a still.
+
 ### Playlist — ten tracks
 
 Six Spider-Verse tracks were added on 2026-08-20: Sunflower, Annihilate, Am I
@@ -224,7 +292,11 @@ at `src/audio/analyzer/backends/`.
 
 ## Next, roughly in order
 
-1. ~~Make the silhouette continuous.~~ **Done**, 2026-08-20. See above.
+1. ~~Make the silhouette continuous.~~ **Done**, 2026-08-20.
+1b. ~~Make the beat visible.~~ **Count-in done**, 2026-08-20. Still open:
+   arc height scaling with section energy, and a palette that cross-fades on
+   section boundaries — which needs section detection the BeatMap does not
+   have yet.
 2. **Fix confidence calibration.** Promoted from the bottom of this list: half
    the playlist now runs reactive because of it. `src/audio/analyzer/` .
 3. **Background detail.** The plan is AI-generated *individual buildings*
