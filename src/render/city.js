@@ -62,6 +62,232 @@ function makeCanvas(w, h) {
   return c;
 }
 
+/**
+ * CROWNS — everything above the roof deck.
+ *
+ * A flat-topped rectangle reads as a bar chart no matter how it is coloured,
+ * because the ONE thing a real skyline never does is stop every building at
+ * the same kind of edge. Real roofs carry water tanks, mechanical housings,
+ * masts, and — on the taller/older stock — a stepped crown the tower itself
+ * narrows into. None of this can touch `buildings[]`: that array is the
+ * webbing surface, and a crown drawn above `b.top` just means the character
+ * lands on the terrace below the ornament, which is exactly what a real
+ * water-tower roof or setback terrace would offer anyway.
+ *
+ * Every function below draws in the building's OWN [x, x+w] span, centred or
+ * inset from it, and never wider than it — that is what keeps a spire from
+ * ever being able to cross a tile edge, without needing a clamp at the call
+ * site. Where a shape could plausibly overshoot (a mast's crossbar, a
+ * parapet's teeth) it clamps itself; see `clampSpan`.
+ */
+
+/** Pull [left, left+width] back inside [x, x+w] without resizing it unless
+ *  it is wider than the building itself (only possible for absurd rnd() rolls
+ *  on tiny buildings, but cheap to guard rather than assume). */
+function clampSpan(left, width, x, w) {
+  const cw = Math.min(width, w);
+  const cl = Math.max(x, Math.min(left, x + w - cw));
+  return [cl, cw];
+}
+
+/** A thin mast, occasionally with one crossbar — a radio mast rather than a
+ *  bare pole. Silhouette-only: no blinking light, because this file only
+ *  ever draws once and a light that doesn't blink is just a dot. */
+function crownMast(ctx, b, rnd, bodyColor) {
+  const { x, w, top } = b;
+  const aw = 2 + rnd() * 2.6;
+  const ah = 16 + rnd() * 58;
+  const ax = x + w * (0.24 + rnd() * 0.5);
+  ctx.fillStyle = bodyColor;
+  ctx.fillRect(ax, top - ah, aw, ah);
+  if (rnd() < 0.45) {
+    const [cl, cw] = clampSpan(ax - aw * 1.6, aw * (3.4 + rnd() * 1.6), x, w);
+    ctx.fillRect(cl, top - ah * (0.32 + rnd() * 0.28), cw, Math.max(1, aw * 0.6));
+  }
+}
+
+/** A water tank on short legs — the single most recognisable roofline shape
+ *  on a real skyline and, at silhouette scale, cheap: three verticals and a
+ *  four-point drum read as a tank even though nothing is actually round. */
+function crownWaterTower(ctx, b, rnd, bodyColor) {
+  const { x, w, top } = b;
+  const drumW = Math.min(w * (0.22 + rnd() * 0.12), w * 0.4);
+  const drumH = drumW * (0.6 + rnd() * 0.25);
+  const legH = 10 + rnd() * 20;
+  const cx = x + w * (0.3 + rnd() * 0.4); // stays within [x+0.1w, x+0.9w] given drumW <= 0.4w
+  const legSpread = drumW * 0.7;
+  const legW = Math.max(1, drumW * 0.06);
+  ctx.fillStyle = bodyColor;
+  for (const i of [-1, 0, 1]) {
+    ctx.fillRect(cx + i * legSpread * 0.42 - legW / 2, top - legH, legW, legH);
+  }
+  const deckY = top - legH;
+  ctx.beginPath();
+  ctx.moveTo(cx - drumW * 0.46, deckY);
+  ctx.lineTo(cx + drumW * 0.46, deckY);
+  ctx.lineTo(cx + drumW * 0.5, deckY - drumH);
+  ctx.lineTo(cx - drumW * 0.5, deckY - drumH);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(cx - drumW * 0.5, deckY - drumH);
+  ctx.lineTo(cx + drumW * 0.5, deckY - drumH);
+  ctx.lineTo(cx, deckY - drumH * 1.45);
+  ctx.closePath();
+  ctx.fill();
+}
+
+/** A mechanical penthouse — the boxy elevator/HVAC housing that sits on top
+ *  of almost every real flat roof. Inset from both edges so it never reaches
+ *  the building's own sides, let alone the tile edge. */
+function crownPenthouse(ctx, b, rnd, bodyColor, edgeColor) {
+  const { x, w, top } = b;
+  const bw = w * (0.18 + rnd() * 0.24);
+  const bh = 10 + rnd() * 24;
+  const bx = x + w * 0.08 + rnd() * (w * 0.6 - bw);
+  ctx.fillStyle = bodyColor;
+  ctx.fillRect(bx, top - bh, bw, bh);
+  if (rnd() < 0.4) {
+    ctx.fillStyle = edgeColor;
+    ctx.fillRect(bx, top - bh, Math.max(1, bw * 0.05), bh);
+  }
+}
+
+/** A raised parapet lip, with the odd tooth of roof machinery poking above
+ *  it. Height is deliberately small — this is the crown for layers too far
+ *  back to spend pixels on anything taller, so it reads as texture on the
+ *  roofline rather than a silhouette feature of its own. */
+function crownParapet(ctx, b, rnd, bodyColor) {
+  const { x, w, top } = b;
+  const ph = 3 + rnd() * 5;
+  ctx.fillStyle = bodyColor;
+  ctx.fillRect(x, top - ph, w, ph);
+  const teeth = 1 + Math.floor(rnd() * 3);
+  for (let i = 0; i < teeth; i++) {
+    const tw = w * (0.05 + rnd() * 0.06);
+    const th = ph + 3 + rnd() * 8;
+    const [tl, tcw] = clampSpan(x + w * (0.15 + rnd() * 0.7) - tw / 2, tw, x, w);
+    ctx.fillRect(tl, top - th, tcw, th);
+  }
+}
+
+/**
+ * Stepped tiers narrowing upward from the roof — the art-deco setback crown
+ * (few, wide steps, often finished with a spire) and the ziggurat variant
+ * (more, thinner steps, no spire) are the same function at different tier
+ * counts and shrink rates, which is enough to make them read as different
+ * buildings rather than parameter noise.
+ *
+ * Each tier is centred on the building's own centreline and is always
+ * narrower than the one below it, so by induction every tier — and any spire
+ * on top of the last one — stays inside [x, x+w]. No clamp needed here,
+ * unlike the flatter crowns above.
+ */
+function crownSetback(ctx, b, rnd, bodyColor, { tiers, shrinkMin, shrinkMax, spireChance }) {
+  const { x, w, top } = b;
+  const cx = x + w * 0.5;
+  let curW = w;
+  let curTop = top;
+  for (let i = 0; i < tiers; i++) {
+    const stepW = curW * (shrinkMin + rnd() * (shrinkMax - shrinkMin));
+    const stepH = 12 + rnd() * 26;
+    ctx.fillStyle = bodyColor;
+    ctx.fillRect(cx - stepW * 0.5, curTop - stepH, stepW, stepH);
+    curW = stepW;
+    curTop -= stepH;
+  }
+  if (rnd() < spireChance) {
+    const mw = Math.max(1.5, curW * 0.1);
+    const mh = 20 + rnd() * 46;
+    ctx.fillStyle = bodyColor;
+    ctx.fillRect(cx - mw / 2, curTop - mh, mw, mh);
+  }
+}
+
+/**
+ * Crown vocabulary, gated by layer proximity. Distant layers (small li, high
+ * haze) stay near-flat on purpose — a stepped crown at haze 0.88 is a smear
+ * of a few grey pixels, not a shape, so spending rnd() calls on one there
+ * only costs determinism budget for nothing visible. `'none'` is repeated in
+ * each pool to weight how often a building gets no ornament at all; real
+ * roofs are mostly flat, and an all-ornamented skyline reads busier, not
+ * more real.
+ */
+function pickCrownType(li, rnd, prevType) {
+  const pools = [
+    ['none', 'none', 'none', 'mast'],
+    ['none', 'none', 'mast', 'parapet'],
+    ['none', 'mast', 'parapet', 'penthouse', 'water-tower'],
+    ['none', 'mast', 'penthouse', 'water-tower', 'setback', 'parapet'],
+    ['mast', 'penthouse', 'water-tower', 'setback', 'ziggurat', 'parapet'],
+  ];
+  const pool = pools[Math.min(li, pools.length - 1)];
+  let type = pool[Math.floor(rnd() * pool.length)];
+  // One re-roll, not a loop until different — a loop could stall (or bias the
+  // draw sequence's rnd() consumption) on a pool where every slot rolled the
+  // same value; a single re-roll makes back-to-back repeats rare without
+  // risking that.
+  if (type === prevType && pool.length > 1) {
+    type = pool[Math.floor(rnd() * pool.length)];
+  }
+  return type;
+}
+
+function drawCrown(ctx, b, li, rnd, bodyColor, edgeColor, prevType) {
+  const type = pickCrownType(li, rnd, prevType);
+  switch (type) {
+    case 'mast':
+      crownMast(ctx, b, rnd, bodyColor);
+      break;
+    case 'water-tower':
+      crownWaterTower(ctx, b, rnd, bodyColor);
+      break;
+    case 'penthouse':
+      crownPenthouse(ctx, b, rnd, bodyColor, edgeColor);
+      break;
+    case 'parapet':
+      crownParapet(ctx, b, rnd, bodyColor);
+      break;
+    case 'setback':
+      crownSetback(ctx, b, rnd, bodyColor, { tiers: 1 + Math.floor(rnd() * 3), shrinkMin: 0.55, shrinkMax: 0.75, spireChance: 0.5 });
+      break;
+    case 'ziggurat':
+      crownSetback(ctx, b, rnd, bodyColor, { tiers: 3 + Math.floor(rnd() * 3), shrinkMin: 0.68, shrinkMax: 0.84, spireChance: 0 });
+      break;
+    default:
+      break;
+  }
+  return type;
+}
+
+/** A lit corner facet standing in for a true chamfer. A geometric chamfer —
+ *  cutting the top corner out of the body rect before the windows pass —
+ *  was tried first and dropped: windows are placed by the same b.x/b.w/b.top
+ *  rect after the fact, so a cut corner either needed the window grid to know
+ *  about it too (a lot of machinery for a silhouette detail) or risked a
+ *  window rendering half-floating past the now-missing wall behind it. Adding
+ *  a small triangle of the lit edge colour on top, after the windows pass,
+ *  gets the same "beveled corner catching the light" read for a fraction of
+ *  the risk, at the cost of being additive rather than a real cut. */
+function drawChamferAccent(ctx, b, rnd, edgeColor) {
+  const { x, w, top } = b;
+  const size = Math.min(w * 0.18, 14 + rnd() * 14);
+  const onRight = rnd() < 0.5;
+  ctx.fillStyle = edgeColor;
+  ctx.beginPath();
+  if (onRight) {
+    ctx.moveTo(x + w - size, top);
+    ctx.lineTo(x + w, top);
+    ctx.lineTo(x + w, top + size);
+  } else {
+    ctx.moveTo(x, top);
+    ctx.lineTo(x + size, top);
+    ctx.lineTo(x, top + size);
+  }
+  ctx.closePath();
+  ctx.fill();
+}
+
 export const CITY_DEFAULTS = {
   seed: 20240817,
   tileWidth: 2400,
@@ -100,9 +326,24 @@ export function createCity(opts = {}) {
 
     ctx.fillStyle = bodyColor;
     const buildings = [];
+    const chamferAccents = []; // drawn after windows — see drawChamferAccent
+    let prevCrown = null;
     while (x < limit) {
-      const w = preset.minW + rnd() * (preset.maxW - preset.minW);
-      const h = preset.minH + rnd() * (preset.maxH - preset.minH);
+      // Most buildings roll the normal footprint. A low, wide block among the
+      // towers — the deliberate silhouette break a skyline needs so it doesn't
+      // read as one height of tower repeated — gets its own roll, gated to
+      // layers where "among the towers" actually means something (li 0/1 are
+      // already short) and clamped to whatever room is left before `limit` so
+      // widening it can never push a building past the tile-edge margin.
+      const isLowBlock = li >= 2 && rnd() < 0.1;
+      let w, h;
+      if (isLowBlock) {
+        w = Math.min(preset.maxW * (1.15 + rnd() * 0.55), tileWidth - preset.gap * 2 - x);
+        h = preset.minH * (0.5 + rnd() * 0.22);
+      } else {
+        w = preset.minW + rnd() * (preset.maxW - preset.minW);
+        h = preset.minH + rnd() * (preset.maxH - preset.minH);
+      }
       const top = groundY - h;
       buildings.push({ x, w, top, h });
 
@@ -115,20 +356,17 @@ export function createCity(opts = {}) {
       ctx.fillRect(x, top, Math.max(1, w * 0.012), totalH - top);
       ctx.fillRect(x, top, w, Math.max(1, 2 - li * 0.3));
 
-      // Roof furniture. Cheap, and it is what stops a skyline reading as a
-      // bar chart.
-      if (rnd() < 0.32 && li >= 1) {
-        const aw = 2 + rnd() * 3;
-        const ah = 14 + rnd() * 46;
-        const ax = x + w * (0.2 + rnd() * 0.6);
-        ctx.fillStyle = bodyColor;
-        ctx.fillRect(ax, top - ah, aw, ah);
-      }
-      if (rnd() < 0.18 && li >= 2) {
-        const bw = w * (0.18 + rnd() * 0.22);
-        const bh = 10 + rnd() * 22;
-        ctx.fillStyle = bodyColor;
-        ctx.fillRect(x + w * 0.1 + rnd() * (w * 0.6), top - bh, bw, bh);
+      // Roof crown. This is what stops a skyline reading as a bar chart — see
+      // the CROWNS block above `createCity` for the shape vocabulary and why
+      // none of it touches `buildings[]`.
+      prevCrown = drawCrown(ctx, { x, w, top }, li, rnd, bodyColor, edgeColor, prevCrown);
+
+      // Chamfer accents read better once they sit above the window layer —
+      // see drawChamferAccent for why this is additive-after rather than
+      // cut-into-the-body. Gated to nearer layers, where a corner facet is
+      // large enough in pixels to actually register.
+      if (li >= 2 && rnd() < 0.22) {
+        chamferAccents.push({ x, w, top });
       }
 
       x += w + preset.gap + rnd() * preset.gap * 2.5;
@@ -159,6 +397,12 @@ export function createCity(opts = {}) {
         }
       }
       ctx.globalAlpha = 1;
+    }
+
+    // See drawChamferAccent: drawn last so the lit facet sits above the
+    // window layer instead of being drawn over by it.
+    for (const b of chamferAccents) {
+      drawChamferAccent(ctx, b, rnd, edgeColor);
     }
 
     return {
