@@ -13,7 +13,7 @@ about where it got to, what is broken, and what to do next.
 cd ~/swing-city && npm install && npm test && npm run dev
 ```
 
-Expect **68 pass, 4 fail**. The four failures are pre-existing analyser issues,
+Expect **74 pass, 4 fail**. The four failures are pre-existing analyser issues,
 documented below, not regressions. If you see a different number, something
 changed.
 
@@ -116,10 +116,25 @@ had spent four beats pointing at. After the apex his altitude only increases, so
 the commit is correct by construction. A bigger clearance number does NOT fix
 this — tried 240, it got worse.
 
-Emergency recovery deliberately clears `plannedAnchor` and fires at whatever it
-can reach. The ring vanishes rather than redirecting: an abandoned count-in is
-honest, a redirected one is not. `tests/grapple.test.mjs` asserts the telegraph
-is honoured on 100% of non-emergency fires.
+⚠️ **The ring must never be contradicted, and keeping that true is subtle.**
+Emergency recovery fires at whatever it can reach. Clearing `plannedAnchor` at
+that moment is too late — the ring goes dark on the same frame the web leaves
+for a different roof, which a viewer reads as the promise being broken.
+Measured: 61-78% of count-ins at low energy were doing exactly that.
+
+`ringAbandonAt: 0.9` withdraws the promise at 90% of the way to the emergency
+threshold, so the ring fades during the fall instead. Tuned by measurement: at
+0.55 the ring was honest and almost never appeared; at 1.0 the lie rate came
+straight back. Do NOT raise it to make the ring appear more often — the reason
+it is rare at low energy is the emergency-rate problem above, not this number.
+The emergency path also now prefers the already-committed roof when it is still
+usable, since the emergency is about altitude, not about the target being wrong.
+
+⚠️ **This bug shipped past a green test.** The original test excluded emergency
+fires, reasoning that abandonment is legitimate. It is — but that made the test
+assert the invariant the CODE happened to have rather than the one the feature
+exists to provide. The test now tracks the ring's live state including its
+withdrawal, across six tempo/energy combinations, and allows no exclusions.
 
 ⚠️ **Beat accents are MOTION, never luminance.** A whole-frame brightness pulse
 per beat is a photosensitivity hazard, not a style choice — WCAG 2.3.1 caps
@@ -221,7 +236,37 @@ The build is Vercel-ready. `npm run build` strips
 `dist/audio/scratch` (~70MB of local-only click tracks that `public/` would
 otherwise copy). **dist is now ~56MB**, almost all of it the ten MP3s.
 
-### Art direction — undecided, six candidates
+### Art direction — palette system, default `noir`
+
+`src/render/palettes.js` holds five named palettes as data. `noir` is the
+default; press **P** on the site to cycle them live.
+
+The style lab's real finding was not that one look beat the others. It was that
+every look which worked shared a CONTRAST STRATEGY and differed only in hue —
+saturated sky, near-black city, hot rim on a near-black figure. The ones that
+failed, the original included, put the buildings and the character at nearly the
+same value, so the figure sank into the skyline and no amount of texture saved
+it. `noir` and `magicHour` are deliberately the same recipe in different keys;
+that is the evidence this is a system rather than a look, and it is why the
+palettes are data and not a branch.
+
+A palette carries the city colours, the figure colours, halftone parameters, a
+grain amount, and a halo colour that light-ground palettes set to null (a dark
+halo raises local contrast against a dark sky; on cream it is a smudge).
+
+`applyPalette()` regenerates the city, because the layer colours are baked into
+the pre-rendered layer canvases — which is exactly why the layers are cheap to
+draw. It refills `city.layers` IN PLACE so references handed out at boot stay
+valid: main.js passes `city.buildingsAheadOf` to the simulation, and since the
+seed does not change, the geometry the grapple targets is identical across a
+switch. Only the paint moves.
+
+⚠️ Large-area colour may only ever CROSS-FADE between palettes, never cut. See
+the beat-accent note above: a large-area luminance change at beat rate is a
+photosensitivity hazard, and the saturated reds here are the case the
+guidelines name specifically.
+
+### Art direction — the six candidates that produced it
 
 `style-lab.html` (dev only) renders one swing frame in six treatments. The
 comparison says the current look is the WEAKEST of the six: the figure and the
@@ -270,6 +315,34 @@ confidence metric that is wrong, and it is now the highest-value analyser fix.
 ---
 
 ## Known broken
+
+### ⚠️ He falls far too deep, and it is the top problem
+
+Measured 2026-08-20 on the synthetic skyline in `tests/grapple.test.mjs`:
+
+```
+cruiseY = 421   emergencyDrop = 1200   WORLD_HEIGHT = 1080
+                       emergency fires        deepest hip.y
+95 BPM  energy 0.15         72%                  2104
+120 BPM energy 0.15         78%                  2091
+120 BPM energy 0.85          5%                  2166
+140 BPM energy 0.85          6%                  2166
+```
+
+He routinely reaches **hip.y ~2100 — roughly 1700 below cruise, and about twice
+WORLD_HEIGHT below the top of the world.** At low energy the MAJORITY of swing
+cycles end in emergency recovery rather than a planned fire.
+
+This is what the "camera drops below the roofline and you are looking at the
+sides of buildings" frames are. It was visible on screen and dismissed once as
+an artifact of a half-applied edit. It is not an artifact.
+
+The arc-energy work improved it a lot at high energy (baseline was 42-70%
+emergency, now 5-11%) but low energy is barely better than baseline. The
+suspects are `minFreefallTime: 1.15` interacting with full gravity, and the
+altitude assist not being able to keep up. **Do this before any more visual
+work** — it is upstream of the count-in, the framing, and the arc scaling all
+at once.
 
 **4 failing tests**, all analyser, all pre-existing from an agent that was cut
 off mid-edit:

@@ -73,9 +73,24 @@ export const SWING_DEFAULTS = {
   webSpeed: 6000,
 
   /** Anchor search window. Short because roof height caps the radius; see the
-   *  geometry note above. */
+   *  geometry note above. `maxAnchorAhead` is the far edge used at FULL
+   *  energy — unchanged from before this file scaled with the music, so it
+   *  is still the proven-safe ceiling. */
   minAnchorAhead: 400,
   maxAnchorAhead: 900,
+  /**
+   * Near edge of the reach window at zero energy, paired with
+   * `maxAnchorAhead` above. A quiet verse should reach for the nearest roof
+   * that clears him, not the same 900-unit window every time — reaching far
+   * on a quiet passage produced a swing that LOOKED like a chorus while the
+   * track was doing nothing. See `anchorReach()`.
+   */
+  maxAnchorAheadFloor: 550,
+  /** Floor of the reach/rope energy curves, separate from `energyFloor`
+   *  below (which exists so the PUMP never fully stalls). These are allowed
+   *  to sit low: reach and rope length should visibly shrink in a quiet
+   *  verse, that is the point of this whole change. */
+  arcEnergyFloor: 0.12,
   /** Attach point sits this far above the roof surface — a web wraps a corner,
    *  it does not terminate flush. */
   roofClearance: 30,
@@ -130,10 +145,46 @@ export const SWING_DEFAULTS = {
   /** Rope shorter than this has no meaningful radial direction. */
   minRope: 40,
   /** Longest usable radius. See the geometry note: bottom of arc lands at
-   *  anchor.y + rope, and the screen ends at ~1080. */
+   *  anchor.y + rope, and the screen ends at ~1080. Also the QUIETEST rope
+   *  target now — see `chooseWebLength()` — a long rope leaves him further
+   *  below the anchor at the end of the reel, which is the small, low arc a
+   *  quiet passage wants. */
   maxRope: 620,
-  /** Fraction of the remaining rope excess reeled in per second. */
-  reelRate: 3.2,
+  /**
+   * Rope-length target at FULL energy. Paired with `maxRope` above through
+   * `chooseWebLength()` — a short target for a loud passage, because a short
+   * target reels him in CLOSE to the anchor, and that climb is the visible
+   * arc. See that function's doc comment for the reasoning and the wrong
+   * turn taken getting there.
+   *
+   * Before this whole mechanism existed, every fall long enough to clear
+   * `minFreefallTime` (about 1.15s of gravity) covered well over 620 units,
+   * so `ropeTarget` was `clamp(raw, minRope, maxRope)` with `raw` almost
+   * always past the ceiling — meaning ropeTarget was, in practice, just
+   * `maxRope`, a constant, every single swing. That is the bug this file was
+   * written to fix: energy fed the tangential pump, but the ROPE — the thing
+   * that actually sets how big the recovery reads — never heard about it.
+   * Loud and quiet passages produced statistically identical arcs.
+   */
+  ropeReelFloor: 300,
+  /**
+   * Fraction of the remaining rope excess reeled in per second.
+   *
+   * Raised from 3.2. At 3.2 the reel barely dents a 1500-2000 unit overshoot
+   * before `maxSwingTime` cuts the swing off — measured, `ropeLength` was
+   * still 700+ units from `chooseWebLength()`'s target when most swings
+   * ended, which made the whole energy-scaled target close to moot: the
+   * target the reel is chasing barely matters if it never gets there.
+   *
+   * Tried 8 first. It closes the gap faster and the height ratio measured
+   * even bigger, but swept across tempos it measurably raised the emergency
+   * rate at low energy on some (135-145 BPM, specifically) — a weak pump
+   * plus a fast reel is still a weak pump, and at that tempo the beat grid
+   * left less room to recover before the next drop. 4 is the number where
+   * every tempo tested (95/120/140/174 BPM) held at or under its own
+   * baseline emergency rate.
+   */
+  reelRate: 4,
   /** Minimum reel speed, units/sec, so the last few units do not crawl. */
   reelFloor: 90,
 
@@ -145,6 +196,38 @@ export const SWING_DEFAULTS = {
    * unrecoverable. This catches that.
    */
   emergencyDrop: 1200,
+
+  /**
+   * Fraction of `emergencyDrop` at which the count-in ring STOPS promising.
+   *
+   * Emergency recovery fires at whatever it can reach, which is not
+   * necessarily the roof the ring has spent several beats pointing at. The
+   * ring going dark at the same instant the web leaves for somewhere else is
+   * a visible broken promise, and a count-in that lies is worse than no
+   * count-in — it is the one element on screen whose whole job is to prove the
+   * choreography is planned.
+   *
+   * Measured before this existed: at low energy 61-78% of count-ins were
+   * broken this way. It did not show up in tests because the test excluded
+   * emergency fires, so it asserted the invariant the code happened to have
+   * rather than the one a viewer sees.
+   *
+   * Withdrawing the promise EARLY, while he is still falling and well before
+   * the emergency threshold, means the ring fades out during the fall rather
+   * than being contradicted at the fire.
+   *
+   * Tuned by measurement, not taste. At 0.55 the count-in became honest and
+   * almost never appeared — no lie, no proof either. At 1.0 (i.e. abandoning
+   * only at the emergency itself) the old 61-78% lie rate came straight back.
+   * 0.9 is the knee: zero broken promises at every tempo and energy tested,
+   * and the ring still shows on most high-energy swings.
+   *
+   * That it shows RARELY during quiet passages is not this constant's fault.
+   * It is reporting the real problem — see the emergency-rate note in
+   * HANDOFF.md. Do not raise this to make the ring appear more often; that
+   * only restores the lie.
+   */
+  ringAbandonAt: 0.9,
 
   startX: 0,
   startY: WORLD_HEIGHT * 0.34,
@@ -179,6 +262,60 @@ export function createSwinger(options = {}) {
   let plannedAnchor = null;
 
   /* ------------------------------------------------------------------ *
+   * Energy -> arc plan                                                  *
+   *                                                                      *
+   * Both of these are PLAN values — read once, when a swing is set up    *
+   * (anchor search, rope clamp) — not forces applied during it. That     *
+   * matters here specifically: the pump already reads energy every       *
+   * frame, and turning it up further to make arcs bigger was tried and   *
+   * produces exactly what it should not — a bigger FORCE fighting the    *
+   * same drag ceiling, which mostly shows up as a faster swing at        *
+   * nearly the same radius, not a bigger one. The radius has to be       *
+   * decided before the swing starts.                                    *
+   * ------------------------------------------------------------------ */
+
+  /** Shared low-energy floor for both curves below, kept out of
+   *  `energyFloor` (the pump's own floor) on purpose — see
+   *  `arcEnergyFloor`'s doc comment. */
+  function arcDrive(e) {
+    return cfg.arcEnergyFloor + (1 - cfg.arcEnergyFloor) * e;
+  }
+
+  /**
+   * Rope-length ceiling for THIS swing. `raw` (how far he actually fell) is
+   * still clamped against it in `stepFire`, so a short fall never gets
+   * artificially stretched.
+   *
+   * COUNTERINTUITIVE, so read this before changing it: a LONGER target rope
+   * produces a SMALLER visible recovery. `raw` is routinely 1500-2000+ —
+   * several times any sane rope length — because he free-falls under full
+   * gravity for `minFreefallTime` before the beat lets him fire, so every
+   * swing starts by reeling in from a huge overshoot rather than settling
+   * into an oscillation. The reel is the whole visible arc: it is what
+   * carries him from the bottom of the dive back up toward the anchor. A
+   * SHORT target reels him in CLOSE to the anchor — a big, dramatic recovery
+   * that climbs a long way — and a LONG target leaves him further below it —
+   * a small, shallow recovery.
+   *
+   * First attempt got this backwards: longer rope for loud passages, on the
+   * (correct, for an actual oscillating pendulum) intuition that a longer
+   * rope swings bigger. Measured result was the opposite of the brief — loud
+   * passages came out LOWER than quiet ones — because this file's rope never
+   * gets anywhere near equilibrium long enough to oscillate; it is a winch,
+   * not a pendulum, for the entire useful duration of a swing.
+   */
+  function chooseWebLength(e) {
+    return cfg.maxRope - (cfg.maxRope - cfg.ropeReelFloor) * arcDrive(e);
+  }
+
+  /** Far edge of the anchor search window for THIS pick. A big arc that
+   *  only got taller and not further would read as a bounce, not a swing —
+   *  reach has to grow with it. */
+  function anchorReach(e) {
+    return cfg.maxAnchorAheadFloor + (cfg.maxAnchorAhead - cfg.maxAnchorAheadFloor) * arcDrive(e);
+  }
+
+  /* ------------------------------------------------------------------ *
    * Anchor selection                                                    *
    * ------------------------------------------------------------------ */
 
@@ -197,20 +334,37 @@ export function createSwinger(options = {}) {
       // Only roofs actually ABOVE him are usable: webbing a roof at or below
       // your own height gives a sideways rope that carries no weight, which is
       // what produced a runaway descent in an earlier build.
-      const usable = findBuildings(hip.x, cfg.minAnchorAhead, cfg.maxAnchorAhead)
-        .filter((b) => b.y < hip.y - clearance);
+      const usable = findBuildings(hip.x, cfg.minAnchorAhead, anchorReach(energy))
+        .filter((b) => b.y < hip.y - clearance)
+        .sort((a, b) => a.y - b.y); // tallest (smallest y) first
 
       if (usable.length) {
-        // Vary WHICH of the tall candidates gets used.
+        // Vary WHICH of the tall candidates gets used, AND — this is the
+        // energy hook — vary how tall a candidate energy is even allowed to
+        // reach for.
         //
         // Always taking the tallest made the motion visibly loop: the skyline
         // is one repeating tile, so that rule resolved to the same five
         // buildings forever and every swing came out identical. Rotating
-        // through the top few by a counter breaks the period without giving up
-        // the height preference — roof height is still the radius budget, so
-        // the pool stays restricted to the tallest handful.
-        const pool = Math.min(usable.length, cfg.anchorPool);
-        const b = usable[swingCount % pool];
+        // through a band by a counter breaks the period without giving up
+        // the height preference.
+        //
+        // The band itself SLIDES with energy rather than sitting fixed at the
+        // top. This is the one lever in this file that moves the needle on
+        // its own: anchor height sets `anchor.y` directly, and everything
+        // downstream — the rope's resting length, the swing's resting
+        // altitude — is `anchor.y + (something bounded)`. A rope-length or
+        // reel-speed change only ever adjusts that second term, and by the
+        // time a fall this deep has reeled in at all, the swing is usually
+        // over; the anchor's own height is not subject to that arithmetic, it
+        // is added once and holds. A quiet passage settles for whatever roof
+        // clears him with the least margin — a small, low arc. A loud one
+        // reaches for the tallest roof in range — a bigger reel-in, a higher
+        // ceiling, an arc that actually reads as bigger on screen.
+        const pool = Math.max(1, Math.min(cfg.anchorPool, usable.length));
+        const bands = Math.max(1, usable.length - pool + 1);
+        const bandStart = Math.round((1 - arcDrive(energy)) * (bands - 1));
+        const b = usable[bandStart + (swingCount % pool)];
         swingCount++;
         return { x: b.x, y: b.y - cfg.roofClearance };
       }
@@ -304,7 +458,13 @@ export function createSwinger(options = {}) {
       // in plausibility.
       const raw = Math.hypot(hip.x - anchor.x, hip.y - anchor.y);
       ropeLength = Math.max(raw, cfg.minRope);
-      ropeTarget = clamp(raw, cfg.minRope, cfg.maxRope);
+      // The upper bound used to be the constant `cfg.maxRope`. It almost
+      // never bound anything BUT that ceiling: `raw` after a minFreefallTime
+      // fall is routinely past 620, so ropeTarget was, in effect, always
+      // `maxRope` regardless of energy — see `chooseWebLength()`'s doc
+      // comment for the measurement. Swapping in the energy-scaled ceiling
+      // is what actually lets a quiet passage reel in shorter.
+      ropeTarget = clamp(raw, cfg.minRope, chooseWebLength(energy));
       swingTime = 0;
       freefallTime = 0;
       phase = 'swing';
@@ -476,10 +636,22 @@ export function createSwinger(options = {}) {
         fireAt(t);
       }
 
+      // Stop promising once the fall is deep enough that emergency recovery
+      // is plausible. See cfg.ringAbandonAt — this is what keeps the count-in
+      // honest, and it has to happen BEFORE the emergency fire, not at it.
+      if (plannedAnchor && hip.y > cfg.cruiseY + cfg.emergencyDrop * cfg.ringAbandonAt) {
+        plannedAnchor = null;
+      }
+
       // Emergency recovery — see emergencyDrop.
       if (phase === 'freefall' && hip.y > cfg.cruiseY + cfg.emergencyDrop) {
+        // Prefer the roof already committed to, when it is still usable. The
+        // emergency is about altitude, not about the target being wrong, so
+        // re-picking here threw away a perfectly good anchor and — before
+        // ringAbandonAt above — moved the web away from the ring.
+        const t = plannedAnchor && plannedAnchor.y < hip.y - 40 ? plannedAnchor : chooseAnchor();
         plannedAnchor = null;
-        fireAt(chooseAnchor());
+        fireAt(t);
       }
     }
 
