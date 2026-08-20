@@ -23,6 +23,35 @@ function makeCanvas(w, h) {
 }
 
 /* ------------------------------------------------------------------ *
+ * Paper grain                                                         *
+ * ------------------------------------------------------------------ */
+
+/**
+ * One tile of monochrome noise, to be tiled over the frame as a CanvasPattern.
+ *
+ * Screen space, like the halftone, and for the same reason: grain is a
+ * property of the paper, not of the scene. Generated once — per-frame noise
+ * would both allocate and crawl, and crawling grain reads as video compression
+ * rather than as print.
+ *
+ * The tile is deliberately not a power of two and not square-symmetric, so the
+ * repeat is hard to pick out.
+ */
+export function createGrain({ size = 180, spread = 255 } = {}) {
+  const tile = makeCanvas(size, size);
+  const c = tile.getContext('2d');
+  const img = c.createImageData(size, size);
+  const d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const v = 128 + (Math.random() - 0.5) * spread;
+    d[i] = d[i + 1] = d[i + 2] = v;
+    d[i + 3] = 255;
+  }
+  c.putImageData(img, 0, 0);
+  return tile;
+}
+
+/* ------------------------------------------------------------------ *
  * Halftone                                                            *
  * ------------------------------------------------------------------ */
 

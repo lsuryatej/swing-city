@@ -16,6 +16,7 @@ import { analyzeInWorker } from './audio/analyze-client.js';
 import { loadPlaylist } from './playlist.js';
 import { createSwinger } from './sim/grapple.js';
 import { createRenderer } from './render/canvas.js';
+import { PALETTES } from './render/palettes.js';
 
 import { DEFAULT_DENSITY } from './contract.js';
 const SWING_DENSITY = DEFAULT_DENSITY;
@@ -397,6 +398,14 @@ function wireTransport() {
     if (e.code === 'Space' && state.player) {
       e.preventDefault();
       dom.playPause.click();
+    }
+    // Cycle the art direction. Present so the palettes can be compared live,
+    // against the real motion, rather than argued about from stills — the
+    // style lab shows one frozen frame and a look that survives a still can
+    // still fall apart once the halftone is sliding under a moving figure.
+    if ((e.code === 'KeyP' || e.code === 'BracketRight') && state.renderer) {
+      const name = state.renderer.cyclePalette(1);
+      setStatus(PALETTES[name]?.label ?? name);
     }
   });
 }

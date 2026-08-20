@@ -16,7 +16,8 @@
 
 import { BONES, JOINT_NAMES, criticalStep } from '../sim/skeleton.js';
 import { createCity, createSky, CITY_DEFAULTS } from './city.js';
-import { createHalftone, createKrackle, withChromatic, createSpeedLines } from './comic.js';
+import { createHalftone, createKrackle, withChromatic, createSpeedLines, createGrain } from './comic.js';
+import { PALETTES, PALETTE_ORDER, DEFAULT_PALETTE } from './palettes.js';
 import { drawDetailedFigure } from './figure.js';
 import { drawSpriteFigure, spritesReady } from './sprite-figure.js';
 import { drawSilhouette } from './silhouette.js';
@@ -98,10 +99,30 @@ export const RENDER_DEFAULTS = {
   lookAhead: 0.38,
   /** Camera is biased upward so there is room to see the arc below. */
   verticalBias: -70,
+  /** Fraction of the way the camera nudges toward pose.nextAnchor while the
+   *  count-in ring is live, on top of look-ahead/vertical bias. The ring is
+   *  the thing that proves the choreography is planned, not reactive (see
+   *  HANDOFF.md), so it is wasted if it lands off the edge of frame. Kept
+   *  small — this reframes toward the target, it does not cut to it. */
+  anchorBias: 0.2,
+  /** Half-life for anchorBias fading in and out as pose.nextAnchor appears
+   *  and disappears. Without this the bias itself steps 0->1 in one frame,
+   *  and that step arrives at the camera spring undamped, which reads as a
+   *  flinch toward the roof right on the beat it should be planning for.
+   *  Easing the WEIGHT, not just relying on the position spring below, is
+   *  what keeps it a nudge instead of a flinch. */
+  anchorBiasHalfLife: 0.4,
   bodyColor: '#05060c',
   rimColor: '#8fc8ff',
   webColor: '#e8f2ff',
   accentColor: '#ff4d5e',
+  speedLineColor: 'rgba(255,255,255,0.5)',
+  krackleCore: '#ffffff',
+  krackleRim: '#5fb0ff',
+  /** Paper noise opacity, 0 skips the pass. */
+  grainAlpha: 0,
+  /** Named entry in ./palettes.js. Overwrites every colour field above. */
+  palette: DEFAULT_PALETTE,
 };
 
 /**
@@ -215,13 +236,23 @@ export function createRenderer(canvas, options = {}) {
   const opts = { ...RENDER_DEFAULTS, ...options };
   const ctx = canvas.getContext('2d', { alpha: false });
 
-  const city = createCity(options.city || CITY_DEFAULTS);
-  const sky = createSky(city.config);
-  const anchorGlow = createGlowSprite(90, 'rgba(140,200,255,0.5)');
+  const baseCityCfg = { ...CITY_DEFAULTS, ...(options.city || {}) };
+  const city = createCity(baseCityCfg);
+  let sky = createSky(baseCityCfg);
+  // Rebuilt per palette in applyPalette(), same as figureGlow below — a
+  // fixed blue-white blob read fine on midnight, the palette it was tuned
+  // against, and clashed on every warm sky since a cool glow sitting on a
+  // red or orange ground reads as an error rather than as the web having
+  // stuck to something.
+  let anchorGlow = createGlowSprite(90, 'rgba(140,200,255,0.5)');
 
   // --- Comic pass ------------------------------------------------------
-  const halftoneTile = createHalftone({ cell: 5, radius: 1.2 });
+  let halftoneTile = createHalftone({ cell: 5, radius: 1.2 });
+  let halftoneAlpha = 0.05;
+  let halftoneOp = 'overlay';
   let halftonePattern = null;
+  const grainTile = createGrain();
+  let grainPattern = null;
   const krackle = createKrackle({ max: 90 });
   const speedLines = createSpeedLines({ count: 22 });
   // Krackle fires on a RISING energy edge, not on level, so a sustained loud
@@ -234,7 +265,7 @@ export function createRenderer(canvas, options = {}) {
   // meant to separate. Darkening the sky immediately behind him raises local
   // contrast instead, so the figure reads without any light being added on
   // top of the art.
-  const figureGlow = createGlowSprite(150, 'rgba(2,3,10,0.62)');
+  let figureGlow = createGlowSprite(150, 'rgba(2,3,10,0.62)');
 
   // --- Persistent state -------------------------------------------------
   const cam = { x: 0, y: WORLD_HEIGHT * 0.5, vx: 0, vy: 0 };
@@ -248,6 +279,15 @@ export function createRenderer(canvas, options = {}) {
    *  reads as the character changing size instead of as a hit on the frame. */
   let drawScale = 1;
   const kick = { x: 0, v: 0 };
+  // Eased 0..1 weight for the camera's nudge toward pose.nextAnchor. Same
+  // criticalStep spring as `kick`, just riding a weight instead of a scale
+  // offset, so it can ramp smoothly in either direction instead of stepping.
+  const anchorEase = { x: 0, v: 0 };
+  // Last seen nextAnchor position. Held onto because the bias needs a point
+  // to ease TOWARD while ramping out — pose.nextAnchor itself goes null the
+  // instant the count-in ends, and the camera would have nothing left to
+  // blend against for the tail of the ease.
+  const lastAnchorPos = { x: 0, y: 0 };
   /** Beats seen since the last count-in ring reset, for the ring pulse. */
   let ringPulse = 0;
   let lastPhase = 'freefall';
@@ -273,6 +313,44 @@ export function createRenderer(canvas, options = {}) {
   const hipVel = { x: 0, y: 0 };
   let haveLastHip = false;
 
+  /**
+   * Swap the art direction.
+   *
+   * The city has to be regenerated because its colours are baked into the
+   * pre-rendered layer canvases — that is the whole reason the layers are fast
+   * to draw. Regeneration is a few milliseconds and happens only on an
+   * explicit switch, never in the frame loop.
+   *
+   * `city.layers` is refilled IN PLACE rather than replaced, so every
+   * reference handed out at boot stays valid. In particular main.js passes
+   * `city.buildingsAheadOf` to the simulation, and the seed is unchanged, so
+   * the geometry the grapple targets is identical across a palette switch —
+   * only the paint moves.
+   */
+  function applyPalette(name) {
+    const p = PALETTES[name];
+    if (!p) return false;
+    opts.palette = name;
+    Object.assign(opts, p.render);
+
+    const cfg = { ...baseCityCfg, ...p.city };
+    const fresh = createCity(cfg);
+    city.layers.length = 0;
+    for (const l of fresh.layers) city.layers.push(l);
+    sky = createSky(cfg);
+
+    halftoneTile = createHalftone(p.halftone);
+    halftoneAlpha = p.halftone.alpha;
+    halftoneOp = p.halftone.op;
+    halftonePattern = null;
+    opts.halftoneAlpha = p.halftone.alpha;
+    opts.grainAlpha = p.grain;
+
+    figureGlow = p.halo ? createGlowSprite(150, p.halo) : null;
+    anchorGlow = createGlowSprite(90, p.anchorGlow);
+    return true;
+  }
+
   function resize() {
     dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
     const rect = canvas.getBoundingClientRect();
@@ -294,7 +372,7 @@ export function createRenderer(canvas, options = {}) {
     cam['v' + axis] = (cam['v' + axis] - j1 * y * dt) * e;
   }
 
-  function updateCamera(hip, dt) {
+  function updateCamera(hip, nextAnchor, dt) {
     if (!haveLastHip) {
       lastHip.x = hip.x;
       lastHip.y = hip.y;
@@ -313,6 +391,23 @@ export function createRenderer(canvas, options = {}) {
 
     camTarget.x = hip.x + hipVel.x * opts.lookAhead;
     camTarget.y = hip.y + hipVel.y * opts.lookAhead * 0.35 + opts.verticalBias;
+
+    // Nudge the target toward the count-in anchor, eased in and out rather
+    // than gated on nextAnchor being non-null: a hard gate steps the bias
+    // 0->1 on whatever frame the anchor commits or fires, and that step
+    // hits camStep's spring as an impulse — it reads as the camera flinching
+    // toward the roof, not as a reframe. Easing the WEIGHT keeps the actual
+    // camTarget continuous even though nextAnchor itself is not.
+    if (nextAnchor) {
+      lastAnchorPos.x = nextAnchor.x;
+      lastAnchorPos.y = nextAnchor.y;
+    }
+    criticalStep(anchorEase, nextAnchor ? 1 : 0, opts.anchorBiasHalfLife, dt);
+    const bias = opts.anchorBias * anchorEase.x;
+    if (bias > 1e-4) {
+      camTarget.x += (lastAnchorPos.x - camTarget.x) * bias;
+      camTarget.y += (lastAnchorPos.y - camTarget.y) * bias;
+    }
 
     camStep('x', camTarget.x, opts.cameraHalfLife, dt);
     camStep('y', camTarget.y, opts.cameraHalfLife * 1.5, dt);
@@ -444,7 +539,7 @@ export function createRenderer(canvas, options = {}) {
     criticalStep(kick, 0, opts.beatKickHalfLife, dt);
     drawScale = scale * (1 + kick.x);
 
-    updateCamera(pose.joints.hipC, dt);
+    updateCamera(pose.joints.hipC, pose.nextAnchor, dt);
 
     // --- Character sampling ----------------------------------------------
     // The camera above and the city below run at display rate; only this is
@@ -471,7 +566,7 @@ export function createRenderer(canvas, options = {}) {
     const speed = Math.hypot(hipVel.x, hipVel.y);
     const speedIntensity = clamp((speed - 500) / 1400, 0, 1);
     if (opts.comic && !opts.reducedMotion) {
-      speedLines.draw(ctx, vw, vh, speedIntensity);
+      speedLines.draw(ctx, vw, vh, speedIntensity, opts.speedLineColor);
     }
 
     // World space: origin at the camera, scaled, centred on the viewport.
@@ -484,14 +579,18 @@ export function createRenderer(canvas, options = {}) {
       (vh * 0.5 - cam.y * drawScale) * dpr
     );
 
-    const gr = 160;
-    ctx.drawImage(
-      figureGlow,
-      snapshot.joints.hipC.x - gr,
-      snapshot.joints.hipC.y - gr,
-      gr * 2,
-      gr * 2
-    );
+    // Null on the light-ground palettes: a dark halo raises local contrast
+    // against a dark sky, but on cream it is just a smudge.
+    if (figureGlow) {
+      const gr = 160;
+      ctx.drawImage(
+        figureGlow,
+        snapshot.joints.hipC.x - gr,
+        snapshot.joints.hipC.y - gr,
+        gr * 2,
+        gr * 2
+      );
+    }
 
     drawTarget(pose);
     drawWeb(snapshot);
@@ -509,7 +608,7 @@ export function createRenderer(canvas, options = {}) {
         krackleCooldown = 0.09;
       }
       krackle.update(dt);
-      krackle.draw(ctx);
+      krackle.draw(ctx, { core: opts.krackleCore, rim: opts.krackleRim });
     }
     prevEnergy = prevEnergy + (energy - prevEnergy) * Math.min(1, dt * 12);
 
@@ -544,9 +643,23 @@ export function createRenderer(canvas, options = {}) {
       if (!halftonePattern) halftonePattern = ctx.createPattern(halftoneTile, 'repeat');
       if (halftonePattern) {
         ctx.save();
-        ctx.globalCompositeOperation = 'overlay';
+        ctx.globalCompositeOperation = halftoneOp;
         ctx.globalAlpha = opts.halftoneAlpha;
         ctx.fillStyle = halftonePattern;
+        ctx.fillRect(0, 0, vw, vh);
+        ctx.restore();
+      }
+    }
+
+    // Grain last of all — it is the paper, and everything else is printed on
+    // it. Screen space for the same reason the halftone is.
+    if (opts.comic && opts.grainAlpha > 0) {
+      if (!grainPattern) grainPattern = ctx.createPattern(grainTile, 'repeat');
+      if (grainPattern) {
+        ctx.save();
+        ctx.globalCompositeOperation = 'overlay';
+        ctx.globalAlpha = opts.grainAlpha;
+        ctx.fillStyle = grainPattern;
         ctx.fillRect(0, 0, vw, vh);
         ctx.restore();
       }
@@ -611,6 +724,7 @@ export function createRenderer(canvas, options = {}) {
     dst.phase = src.phase;
   }
 
+  applyPalette(opts.palette);
   resize();
 
   return {
@@ -619,6 +733,17 @@ export function createRenderer(canvas, options = {}) {
     options: opts,
     setOption(k, v) {
       opts[k] = v;
+    },
+    setPalette: applyPalette,
+    get palette() {
+      return opts.palette;
+    },
+    /** Walk PALETTE_ORDER. Returns the name now active. */
+    cyclePalette(step = 1) {
+      const i = PALETTE_ORDER.indexOf(opts.palette);
+      const next = PALETTE_ORDER[(i + step + PALETTE_ORDER.length) % PALETTE_ORDER.length];
+      applyPalette(next);
+      return next;
     },
     camera: cam,
     city,
